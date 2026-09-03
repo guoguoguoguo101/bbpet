@@ -15,11 +15,11 @@ export function Gathering({ state, room }: GatheringProps) {
   const lastChatIdRef = useRef('')
 
   useEffect(() => {
-    const line = room.lastChat
+    const line = room.lastHomeChat
     if (!line || line.id === lastChatIdRef.current) return
     lastChatIdRef.current = line.id
     setBubbles((current) => ({ ...current, [line.clientId]: { text: line.text, until: Date.now() + 5000 } }))
-  }, [room.lastChat])
+  }, [room.lastHomeChat])
 
   useEffect(() => {
     const timer = window.setInterval(() => {
@@ -38,19 +38,21 @@ export function Gathering({ state, room }: GatheringProps) {
 
   if (!you) return null
 
-  const guests: Presence[] = [you, ...room.people]
-  const ownerId = homeOwnerId(you.placeId)
+  const guests: Presence[] = [you, ...room.homePeople]
+  const ownerId = homeOwnerId(you.homeId)
   const owner =
     ownerId === state.clientId
       ? null
       : guests.find((item) => item.clientId === ownerId) || room.friends.find((item) => item.clientId === ownerId)
-  const title = ownerId === state.clientId ? '自己家' : `${owner?.name || '好友'}的家`
-  const log = room.board.slice(-3)
+  const visiting = ownerId !== state.clientId
+  const title = visiting ? `${owner?.name || '好友'}的家` : '自己家'
+  const log = room.homeBoard.slice(-3)
+  const ownerAway = visiting && !guests.some((item) => item.clientId === ownerId)
 
   const send = () => {
     const text = draft.trim()
     if (!text) return
-    window.bbpet.roomSend({ type: 'chat', text })
+    window.bbpet.roomSend({ type: 'chat', text, placeId: you.homeId })
     setDraft('')
   }
 
@@ -76,14 +78,14 @@ export function Gathering({ state, room }: GatheringProps) {
         <div className="gather-head">
           <strong>{title}</strong>
           <span>{guests.length} 人</span>
-          <button type="button" className="ghost" onClick={() => window.bbpet.leaveHome()}>
-            离开
-          </button>
+          {visiting && (
+            <button type="button" className="ghost" onClick={() => window.bbpet.leaveHome()}>
+              回自己家
+            </button>
+          )}
         </div>
         <div className="gather-log">
-          {ownerId && ownerId !== state.clientId && !guests.some((item) => item.clientId === ownerId) && (
-            <p>主人还在别处，回家后就会出现在你桌面上。</p>
-          )}
+          {ownerAway && <p>主人去别人家串门了，回家后就会出现在桌面上。</p>}
           {log.length === 0 && <p>附近还很安静，打个招呼吧。</p>}
           {log.map((line) => (
             <p key={line.id}>
@@ -103,7 +105,7 @@ export function Gathering({ state, room }: GatheringProps) {
             maxLength={80}
             autoComplete="off"
             spellCheck={false}
-            placeholder="附近的人都能看见"
+            placeholder="客厅里的人都能看见"
             onChange={(event) => setDraft(event.target.value)}
           />
           <button type="submit" disabled={!draft.trim()}>

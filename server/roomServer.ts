@@ -8,7 +8,10 @@ import {
   chatKindFor,
   clampMove,
   defaultSpawn,
+  displayPlace,
   homeOwnerId,
+  homePlaceId,
+  inPlace,
   isHomePlace,
   isPlaceId,
   isSchoolPlace,
@@ -54,7 +57,9 @@ export function startRoomServer(port: number, options?: { friendsFile?: string }
       species: online?.presence.species || rec?.species || 'blob',
       colors: online?.presence.colors || rec?.colors || DEFAULT_COLORS.blob,
       online: Boolean(online),
-      placeId: online?.presence.placeId ?? null,
+      placeId: online ? displayPlace(online.presence) : null,
+      homeId: online?.presence.homeId ?? null,
+      schoolPlaceId: online?.presence.schoolPlaceId ?? null,
     }
   }
 
@@ -83,7 +88,7 @@ export function startRoomServer(port: number, options?: { friendsFile?: string }
   const peopleIn = (placeId: PlaceId, exceptId?: string) => {
     if (placeId === 'away') return []
     return [...byId.values()]
-      .filter((item) => item.presence.placeId === placeId && item.presence.clientId !== exceptId)
+      .filter((item) => inPlace(item.presence, placeId) && item.presence.clientId !== exceptId)
       .map((item) => item.presence)
   }
 
@@ -99,7 +104,7 @@ export function startRoomServer(port: number, options?: { friendsFile?: string }
   const broadcast = (placeId: PlaceId, msg: ServerMsg, except?: WebSocket) => {
     if (placeId === 'away') return
     for (const [socket, client] of clients) {
-      if (client.presence.placeId === placeId && socket !== except) send(socket, msg)
+      if (inPlace(client.presence, placeId) && socket !== except) send(socket, msg)
     }
   }
 
@@ -108,7 +113,14 @@ export function startRoomServer(port: number, options?: { friendsFile?: string }
     if (!client) return
     clients.delete(ws)
     if (byId.get(client.presence.clientId) === client) byId.delete(client.presence.clientId)
-    broadcast(client.presence.placeId, { type: 'leave', clientId: client.presence.clientId })
+    broadcast(client.presence.homeId, { type: 'leave', clientId: client.presence.clientId, placeId: client.presence.homeId })
+    if (client.presence.schoolPlaceId) {
+      broadcast(client.presence.schoolPlaceId, {
+        type: 'leave',
+        clientId: client.presence.clientId,
+        placeId: client.presence.schoolPlaceId,
+      })
+    }
     notifyFriendLists(client.presence.clientId)
   }
 
@@ -142,13 +154,16 @@ export function startRoomServer(port: number, options?: { friendsFile?: string }
           old.ws.close()
           drop(old.ws)
         }
-        const spawn = defaultSpawn('away')
+        const homeId = homePlaceId(msg.clientId)
+        const spawn = defaultSpawn('school:campus')
         const presence: Presence = {
           clientId: msg.clientId,
           name: String(pet.name).slice(0, 12),
           species: pet.species,
           colors: pet.colors,
-          placeId: 'away',
+          homeId,
+          schoolPlaceId: null,
+          placeId: homeId,
           x: spawn.x,
           y: spawn.y,
           facing: 'r',
@@ -157,7 +172,13 @@ export function startRoomServer(port: number, options?: { friendsFile?: string }
         const client: Client = { ws, presence, lastChatAt: 0, chatBurst: 0 }
         clients.set(ws, client)
         byId.set(msg.clientId, client)
-        send(ws, { type: 'welcome', you: presence, snapshot: snapshot(presence.placeId, presence.clientId) })
+        send(ws, {
+          type: 'welcome',
+          you: presence,
+          home: snapshot(homeId, presence.clientId),
+          school: null,
+        })
+        broadcast(homeId, { type: 'join', person: presence, placeId: homeId }, ws)
         notifyFriendLists(msg.clientId)
         return
       }
@@ -169,45 +190,58 @@ export function startRoomServer(port: number, options?: { friendsFile?: string }
       }
 
       if (msg.type === 'enterPlace') {
-        if (!isPlaceId(msg.placeId) || msg.placeId === client.presence.placeId) return
-        const to = msg.placeId
+        if (!isPlaceId(msg.placeId)) return
+        const to = msg.placeId === 'away' ? homePlaceId(client.presence.clientId) : msg.placeId
+
         if (isHomePlace(to)) {
           const owner = homeOwnerId(to)
           if (owner !== client.presence.clientId && !friends.isFriend(client.presence.clientId, owner || '')) {
             send(ws, { type: 'error', message: '还不是好友，先加好友再串门' })
             return
           }
-        }
-        const from = client.presence.placeId
-        const spawn = spawnAfterEnter(from, to)
-        broadcast(from, { type: 'leave', clientId: client.presence.clientId }, ws)
-        client.presence.placeId = to
-        client.presence.x = spawn.x
-        client.presence.y = spawn.y
-        send(ws, { type: 'snapshot', you: client.presence, snapshot: snapshot(to, client.presence.clientId) })
-        broadcast(to, { type: 'join', person: client.presence }, ws)
-        notifyFriendLists(client.presence.clientId)
-        if (isHomePlace(to)) {
-          const owner = homeOwnerId(to)
+          if (to === client.presence.homeId) return
+          const from = client.presence.homeId
+          broadcast(from, { type: 'leave', clientId: client.presence.clientId, placeId: from }, ws)
+          client.presence.homeId = to
+          client.presence.placeId = displayPlace(client.presence)
+          send(ws, { type: 'snapshot', you: client.presence, snapshot: snapshot(to, client.presence.clientId) })
+          broadcast(to, { type: 'join', person: client.presence, placeId: to }, ws)
+          notifyFriendLists(client.presence.clientId)
           if (owner && owner !== client.presence.clientId) {
             const host = byId.get(owner)
-            if (host && host.presence.placeId !== to) {
-              send(host.ws, { type: 'notice', text: `${client.presence.name} 来你家了，点枢纽「回家」就能看见` })
+            if (host && host.presence.homeId !== to) {
+              send(host.ws, { type: 'notice', text: `${client.presence.name} 来你家了，回家就能在桌面上看见` })
             }
           }
+          return
+        }
+
+        if (isSchoolPlace(to)) {
+          if (to === client.presence.schoolPlaceId) return
+          const from = client.presence.schoolPlaceId
+          const spawn = spawnAfterEnter(from ?? client.presence.homeId, to)
+          if (from) broadcast(from, { type: 'leave', clientId: client.presence.clientId, placeId: from }, ws)
+          client.presence.schoolPlaceId = to
+          client.presence.placeId = to
+          client.presence.x = spawn.x
+          client.presence.y = spawn.y
+          send(ws, { type: 'snapshot', you: client.presence, snapshot: snapshot(to, client.presence.clientId) })
+          broadcast(to, { type: 'join', person: client.presence, placeId: to }, ws)
+          notifyFriendLists(client.presence.clientId)
         }
         return
       }
 
       if (msg.type === 'move') {
-        if (!isSchoolPlace(client.presence.placeId)) return
-        const place = PLACES[client.presence.placeId]
+        const school = client.presence.schoolPlaceId
+        if (!school) return
+        const place = PLACES[school]
         const next = clampMove(place, client.presence.x, client.presence.y, Number(msg.x) || 0, Number(msg.y) || 0)
         client.presence.x = next.x
         client.presence.y = next.y
         client.presence.facing = msg.facing === 'l' ? 'l' : 'r'
         broadcast(
-          client.presence.placeId,
+          school,
           {
             type: 'move',
             clientId: client.presence.clientId,
@@ -221,7 +255,9 @@ export function startRoomServer(port: number, options?: { friendsFile?: string }
       }
 
       if (msg.type === 'chat') {
-        if (client.presence.placeId === 'away') return
+        let target: PlaceId | null = msg.placeId && isPlaceId(msg.placeId) && msg.placeId !== 'away' ? msg.placeId : null
+        if (!target) target = client.presence.schoolPlaceId ?? client.presence.homeId
+        if (!inPlace(client.presence, target)) return
         const now = Date.now()
         if (now - client.lastChatAt < 400) return
         if (now - client.lastChatAt < 3000) client.chatBurst += 1
@@ -236,15 +272,15 @@ export function startRoomServer(port: number, options?: { friendsFile?: string }
           name: client.presence.name,
           text,
           ts: now,
-          kind: chatKindFor(client.presence.placeId),
-          placeId: client.presence.placeId,
+          kind: chatKindFor(target),
+          placeId: target,
         }
         if (line.kind === 'board') {
           const board = [...boardOf(line.placeId), line].slice(-BOARD_LIMIT)
           boards.set(line.placeId, board)
         }
         send(ws, { type: 'chat', line })
-        broadcast(client.presence.placeId, { type: 'chat', line }, ws)
+        broadcast(target, { type: 'chat', line }, ws)
         return
       }
 

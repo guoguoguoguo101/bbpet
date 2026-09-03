@@ -2,10 +2,16 @@ import WebSocket from 'ws'
 import type { PetProfile } from '../shared/types'
 import {
   emptyRoomView,
+  homePlaceId,
+  isHomePlace,
+  isSchoolPlace,
   type ClientMsg,
+  type HomePlaceId,
   type PlaceId,
   type RoomView,
+  type SchoolPlaceId,
   type ServerMsg,
+  type WorldSnapshot,
 } from '../shared/world'
 
 export class RoomClient {
@@ -17,7 +23,8 @@ export class RoomClient {
   private wanted = false
   private ready = false
   private pending: ClientMsg[] = []
-  private targetPlace: PlaceId = 'away'
+  private homeTarget: HomePlaceId | null = null
+  private schoolTarget: SchoolPlaceId | null = null
   private retryTimer: NodeJS.Timeout | null = null
   private noticeTimer: NodeJS.Timeout | null = null
   onChange: (view: RoomView) => void = () => {}
@@ -27,11 +34,18 @@ export class RoomClient {
   }
 
   enter(placeId: PlaceId) {
-    this.targetPlace = placeId
+    if (placeId === 'away') this.homeTarget = homePlaceId(this.clientId)
+    else if (isHomePlace(placeId)) this.homeTarget = placeId
+    else if (isSchoolPlace(placeId)) this.schoolTarget = placeId
     this.send({ type: 'enterPlace', placeId })
   }
 
   send(msg: ClientMsg) {
+    if (msg.type === 'enterPlace') {
+      if (msg.placeId === 'away') this.homeTarget = homePlaceId(this.clientId)
+      else if (isHomePlace(msg.placeId)) this.homeTarget = msg.placeId
+      else if (isSchoolPlace(msg.placeId)) this.schoolTarget = msg.placeId
+    }
     if (!this.ready && msg.type !== 'hello') {
       this.pending.push(msg)
       return
@@ -41,6 +55,7 @@ export class RoomClient {
 
   async ensure(url: string, clientId: string, pet: PetProfile) {
     this.wanted = true
+    if (!this.homeTarget) this.homeTarget = homePlaceId(clientId)
     const sameConn = this.ws && this.view.connected && this.url === url && this.clientId === clientId
     if (sameConn) {
       const petChanged =
@@ -77,6 +92,26 @@ export class RoomClient {
     const queued = this.pending
     this.pending = []
     for (const msg of queued) this.send(msg)
+  }
+
+  private applyBucket(snapshot: WorldSnapshot, kind: 'home' | 'school') {
+    if (kind === 'home') {
+      this.view = {
+        ...this.view,
+        homePeople: snapshot.people,
+        homeBoard: snapshot.board,
+        friends: snapshot.friends,
+        incoming: snapshot.incoming,
+      }
+      return
+    }
+    this.view = {
+      ...this.view,
+      people: snapshot.people,
+      board: snapshot.board,
+      friends: snapshot.friends,
+      incoming: snapshot.incoming,
+    }
   }
 
   private connect(): Promise<void> {
@@ -166,7 +201,7 @@ export class RoomClient {
       }, 4200)
       return
     }
-    if (msg.type === 'welcome' || msg.type === 'snapshot') {
+    if (msg.type === 'welcome') {
       this.ready = true
       this.view = {
         ...this.view,
@@ -174,29 +209,53 @@ export class RoomClient {
         connecting: false,
         error: '',
         you: msg.you,
-        people: msg.snapshot.people,
-        board: msg.snapshot.board,
-        friends: msg.snapshot.friends,
-        incoming: msg.snapshot.incoming,
+        homePeople: msg.home.people,
+        homeBoard: msg.home.board,
+        people: msg.school?.people ?? [],
+        board: msg.school?.board ?? [],
+        friends: msg.home.friends,
+        incoming: msg.home.incoming,
         lastChat: null,
+        lastHomeChat: null,
       }
       this.emit()
-      if (msg.type === 'welcome') {
-        this.flush()
-        if (this.targetPlace !== msg.you.placeId) this.send({ type: 'enterPlace', placeId: this.targetPlace })
+      this.flush()
+      if (this.homeTarget && this.homeTarget !== msg.you.homeId) this.send({ type: 'enterPlace', placeId: this.homeTarget })
+      if (this.schoolTarget && this.schoolTarget !== msg.you.schoolPlaceId) {
+        this.send({ type: 'enterPlace', placeId: this.schoolTarget })
       }
       return
     }
+    if (msg.type === 'snapshot') {
+      this.view = { ...this.view, you: msg.you, error: '' }
+      this.applyBucket(msg.snapshot, isHomePlace(msg.snapshot.placeId) ? 'home' : 'school')
+      this.emit()
+      return
+    }
     if (msg.type === 'join') {
-      this.view = {
-        ...this.view,
-        people: [...this.view.people.filter((item) => item.clientId !== msg.person.clientId), msg.person],
+      const person = msg.person
+      if (isHomePlace(msg.placeId) && this.view.you?.homeId === msg.placeId) {
+        this.view = {
+          ...this.view,
+          homePeople: [...this.view.homePeople.filter((item) => item.clientId !== person.clientId), person],
+        }
+      }
+      if (isSchoolPlace(msg.placeId) && this.view.you?.schoolPlaceId === msg.placeId) {
+        this.view = {
+          ...this.view,
+          people: [...this.view.people.filter((item) => item.clientId !== person.clientId), person],
+        }
       }
       this.emit()
       return
     }
     if (msg.type === 'leave') {
-      this.view = { ...this.view, people: this.view.people.filter((item) => item.clientId !== msg.clientId) }
+      if (isHomePlace(msg.placeId)) {
+        this.view = { ...this.view, homePeople: this.view.homePeople.filter((item) => item.clientId !== msg.clientId) }
+      }
+      if (isSchoolPlace(msg.placeId)) {
+        this.view = { ...this.view, people: this.view.people.filter((item) => item.clientId !== msg.clientId) }
+      }
       this.emit()
       return
     }
@@ -211,8 +270,13 @@ export class RoomClient {
       return
     }
     if (msg.type === 'chat') {
-      const board = msg.line.kind === 'board' ? [...this.view.board, msg.line].slice(-80) : this.view.board
-      this.view = { ...this.view, board, lastChat: msg.line }
+      if (isHomePlace(msg.line.placeId)) {
+        const homeBoard = msg.line.kind === 'board' ? [...this.view.homeBoard, msg.line].slice(-80) : this.view.homeBoard
+        this.view = { ...this.view, homeBoard, lastHomeChat: msg.line }
+      } else {
+        const board = msg.line.kind === 'board' ? [...this.view.board, msg.line].slice(-80) : this.view.board
+        this.view = { ...this.view, board, lastChat: msg.line }
+      }
       this.emit()
       return
     }

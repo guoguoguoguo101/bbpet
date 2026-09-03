@@ -42,8 +42,8 @@ export function Settings({ pet, settings, onSavePet, onSaveSettings, onClose }: 
         pushIntervalMin: Math.max(5, Number(draft.pushIntervalMin) || 30),
         roomUrl: (draft.roomUrl || '').trim() || 'ws://127.0.0.1:18765',
         hostRoom: Boolean(draft.hostRoom),
-        worldWidth: draft.worldWidth || 560,
-        worldHeight: draft.worldHeight || 420,
+        worldWidth: draft.worldWidth || 820,
+        worldHeight: draft.worldHeight || 560,
       })
       setHostInfo(await window.bbpet.roomHostInfo())
       onClose()

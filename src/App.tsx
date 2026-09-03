@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import type { AppState, PanelKind, PetPose } from '../shared/types'
-import { emptyRoomView, isHomePlace, type RoomView } from '../shared/world'
+import { emptyRoomView, isHomeGathering, type RoomView } from '../shared/world'
 import { isPetSolid } from './lib/hitTest'
 import { collectPetShape } from './lib/petShape'
 import { Gathering } from './pet/Gathering'
@@ -44,7 +44,7 @@ function PetApp() {
   const pressOrigin = useRef<{ x: number; y: number } | null>(null)
   const lastIgnore = useRef<boolean | null>(null)
   const wrapRef = useRef<HTMLDivElement>(null)
-  const gathering = Boolean(room.you && isHomePlace(room.you.placeId))
+  const gathering = Boolean(state && isHomeGathering(room.you, room.homePeople, state.clientId))
 
   useEffect(() => {
     document.documentElement.classList.add('pet-host')
@@ -184,7 +184,7 @@ function PetApp() {
       window.cancelAnimationFrame(id)
       window.clearTimeout(later)
     }
-  }, [state?.pet.species, state?.pet.name, gathering, room.people.length, room.lastChat?.id, room.board.length])
+  }, [state?.pet.species, state?.pet.name, gathering, room.homePeople.length, room.lastHomeChat?.id, room.homeBoard.length])
 
   const talking = pose === 'talk'
 

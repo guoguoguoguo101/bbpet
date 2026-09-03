@@ -1,5 +1,4 @@
 import type { FriendCard, RoomView } from '../../shared/world'
-import { homeOwnerId } from '../../shared/world'
 import { PixelPet } from '../pet/PixelPet'
 
 interface FriendsPanelProps {
@@ -12,11 +11,11 @@ interface FriendsPanelProps {
 export function FriendsPanel({ room, myId, onVisit, onClose }: FriendsPanelProps) {
   const ownerAt = (card: FriendCard) => {
     if (!card.online) return '离线'
-    const home = card.placeId ? homeOwnerId(card.placeId) : null
-    if (home === card.clientId) return '在自己家'
-    if (home) return '在别人家串门'
-    if (card.placeId?.startsWith('school:')) return '在学校'
-    return '在桌面'
+    const bits: string[] = []
+    if (card.schoolPlaceId) bits.push('在学校')
+    if (card.homeId === `home:${card.clientId}`) bits.push('在自己家')
+    else if (card.homeId) bits.push('在别人家串门')
+    return bits.join(' · ') || '在线'
   }
 
   return (

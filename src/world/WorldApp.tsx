@@ -25,6 +25,29 @@ interface Bubble {
   until: number
 }
 
+const ZOOM_MIN = 1
+const ZOOM_MAX = 4
+
+function cameraFor(
+  scale: number,
+  meX: number,
+  meY: number,
+  stageW: number,
+  stageH: number,
+  mapW: number,
+  mapH: number,
+) {
+  const drawnW = mapW * scale
+  const drawnH = mapH * scale
+  let left = Math.round(stageW / 2 - (meX + PET_SIZE / 2) * scale)
+  let top = Math.round(stageH / 2 - (meY + PET_SIZE / 2) * scale)
+  if (drawnW <= stageW) left = Math.round((stageW - drawnW) / 2)
+  else left = Math.min(0, Math.max(Math.round(stageW - drawnW), left))
+  if (drawnH <= stageH) top = Math.round((stageH - drawnH) / 2)
+  else top = Math.min(0, Math.max(Math.round(stageH - drawnH), top))
+  return { scale, left, top }
+}
+
 export function WorldApp() {
   const [state, setState] = useState<AppState | null>(null)
   const [status, setStatus] = useState('正在走进校门...')
@@ -37,7 +60,9 @@ export function WorldApp() {
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
   const [moving, setMoving] = useState(false)
-  const [view, setView] = useState({ scale: 1, left: 0, top: 0 })
+  const [fitScale, setFitScale] = useState(1)
+  const [zoom, setZoom] = useState(1.8)
+  const [stageSize, setStageSize] = useState({ w: 1, h: 1 })
   const [friendIds, setFriendIds] = useState<string[]>([])
   const [inspect, setInspect] = useState<{ clientId: string; name: string; x: number; y: number } | null>(null)
   const canvasRef = useRef<HTMLCanvasElement>(null)
@@ -78,24 +103,23 @@ export function WorldApp() {
         setStatus(room.connecting ? '正在连学校...' : '正在走进校门...')
         return
       }
-      if (!isSchoolPlace(room.you.placeId)) {
-        setPlaceId(room.you.placeId)
-        setOthers([])
-        setStatus('已经离开学校了')
+      const schoolId = room.you.schoolPlaceId
+      if (!schoolId) {
+        setStatus('正在走进校门...')
         return
       }
       const jumped =
-        room.you.placeId !== placeRef.current ||
+        schoolId !== placeRef.current ||
         Math.hypot(room.you.x - meRef.current.x, room.you.y - meRef.current.y) > 64
       if (jumped) {
         ignoreDoorRef.current = performance.now() + 700
         meRef.current = { x: room.you.x, y: room.you.y, facing: room.you.facing }
         setMe(meRef.current)
       }
-      setPlaceId(room.you.placeId)
+      setPlaceId(schoolId)
       setOthers(room.people)
       setBoard(room.board)
-      setStatus(PLACES[room.you.placeId].title)
+      setStatus(PLACES[schoolId].title)
       if (room.lastChat && room.lastChat.id !== lastChatIdRef.current) {
         lastChatIdRef.current = room.lastChat.id
         const line = room.lastChat
@@ -199,7 +223,7 @@ export function WorldApp() {
         }
         if (now > ignoreDoorRef.current) {
           const trigger = triggerAt(place, clamped.x, clamped.y)
-          if (trigger?.kind === 'exit') window.bbpet.leaveWorld()
+          if (trigger?.kind === 'exit') window.bbpet.closeWorld()
           else if (trigger?.kind === 'campus') {
             ignoreDoorRef.current = now + 800
             window.bbpet.roomSend({ type: 'enterPlace', placeId: 'school:campus' })
@@ -246,12 +270,10 @@ export function WorldApp() {
       const { cols, rows } = mapSize(place)
       const mapW = cols * TILE
       const mapH = rows * TILE
-      const scale = Math.max(0.35, Math.min(stage.clientWidth / mapW, stage.clientHeight / mapH))
-      setView({
-        scale,
-        left: Math.floor((stage.clientWidth - mapW * scale) / 2),
-        top: Math.floor((stage.clientHeight - mapH * scale) / 2),
-      })
+      const w = stage.clientWidth
+      const h = stage.clientHeight
+      setStageSize({ w, h })
+      setFitScale(Math.max(0.5, Math.min(w / mapW, h / mapH)))
     }
     fit()
     const observer = new ResizeObserver(fit)
@@ -259,27 +281,40 @@ export function WorldApp() {
     return () => observer.disconnect()
   }, [placeId, state])
 
+  useEffect(() => {
+    const onWheel = (event: WheelEvent) => {
+      if (chattingRef.current) return
+      if (event.target instanceof HTMLElement && event.target.closest('input, .world-hud, .world-inspect, .world-bar')) {
+        return
+      }
+      event.preventDefault()
+      const factor = event.deltaY > 0 ? 0.9 : 1.12
+      setZoom((current) => {
+        const next = current * factor
+        return Math.round(Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, next)) * 20) / 20
+      })
+    }
+    window.addEventListener('wheel', onWheel, { passive: false })
+    return () => window.removeEventListener('wheel', onWheel)
+  }, [])
+
   const sendChat = () => {
     const text = draft.trim()
     if (!text) return
-    window.bbpet.roomSend({ type: 'chat', text })
+    window.bbpet.roomSend({ type: 'chat', text, placeId })
     setDraft('')
   }
 
   if (!state) return <div className="world-boot">桌宠正在背书包...</div>
   if (!isSchoolPlace(placeId)) {
-    return (
-      <div className="world-boot">
-        <p>已经离开学校了。</p>
-        <p>点枢纽里的「去上学」再回来。</p>
-      </div>
-    )
+    return <div className="world-boot">正在走进校门...</div>
   }
 
   const place = PLACES[placeId]
   const { cols, rows } = mapSize(place)
   const mapW = cols * TILE
   const mapH = rows * TILE
+  const view = cameraFor(fitScale * zoom, me.x, me.y, stageSize.w, stageSize.h, mapW, mapH)
   const actors = [
     {
       clientId: state.clientId,
@@ -296,7 +331,7 @@ export function WorldApp() {
 
   const visibleBoard = board.slice(-7)
   const nearbyHint = place.kind === 'classroom' ? '黑板只有本班听得见' : '走近才看得到气泡'
-  const hint = error || notice || `WASD 移动 · 点同学加好友 · 收起后还在学校 · ${nearbyHint}`
+  const hint = error || notice || `WASD 移动 · 滚轮放大缩小 · 点同学加好友 · ${nearbyHint}`
 
   return (
     <div
@@ -318,12 +353,10 @@ export function WorldApp() {
       <header className="world-bar">
         <strong>{status}</strong>
         <span>{others.length + 1} 人在这里</span>
+        <span className="world-zoom">{Math.round(zoom * 100)}%</span>
         <div className="world-bar-actions">
           <button type="button" className="ghost" onClick={() => window.bbpet.closeWorld()}>
             收起
-          </button>
-          <button type="button" className="ghost" onClick={() => window.bbpet.leaveWorld()}>
-            走出校门
           </button>
         </div>
       </header>

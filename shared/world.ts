@@ -219,6 +219,12 @@ export function displayPlace(person: Pick<Presence, 'homeId' | 'schoolPlaceId'>)
   return person.schoolPlaceId ?? person.homeId
 }
 
+export function isHomeGathering(you: Presence | null, homePeople: Presence[], myId: string) {
+  if (!you) return false
+  if (homeOwnerId(you.homeId) !== myId) return true
+  return homePeople.length > 0
+}
+
 export function emptyRoomView(): RoomView {
   return {
     connected: false,

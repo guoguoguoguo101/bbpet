@@ -26,8 +26,8 @@ export function defaultSettings(env: NodeJS.ProcessEnv = process.env): AppSettin
     pushIntervalMin: Number(env.BBPET_PUSH_INTERVAL || 30) || 30,
     roomUrl: env.BBPET_ROOM_URL || DEFAULT_ROOM_URL,
     hostRoom: env.BBPET_HOST_ROOM === '1',
-    worldWidth: 560,
-    worldHeight: 420,
+    worldWidth: 820,
+    worldHeight: 560,
   }
 }
 
@@ -95,6 +95,10 @@ export class JsonStore {
     if (typeof current.hostRoom !== 'boolean') current.hostRoom = envDefaults.hostRoom
     if (!current.worldWidth) current.worldWidth = envDefaults.worldWidth
     if (!current.worldHeight) current.worldHeight = envDefaults.worldHeight
+    if (current.worldWidth === 560 && current.worldHeight === 420) {
+      current.worldWidth = envDefaults.worldWidth
+      current.worldHeight = envDefaults.worldHeight
+    }
   }
 
   private read(): AppState {

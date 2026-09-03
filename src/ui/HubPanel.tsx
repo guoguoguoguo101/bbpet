@@ -40,7 +40,7 @@ export function HubPanel({
         <PixelPet species={state.pet.species} colors={state.pet.colors} pose="idle" pixelSize={4} />
         <div>
           <p className="hub-name">{state.pet.name}</p>
-          <p className="hint">点一下选地方。学校要连内网房主。</p>
+          <p className="hint">去学校不会离开家。客厅聊天一直在桌面上。</p>
         </div>
       </div>
       <div className="hub-actions">
@@ -50,11 +50,11 @@ export function HubPanel({
         </button>
         <button type="button" className="hub-btn hub-btn-main" onClick={onSchool}>
           <span>{inSchool ? '回到学校' : '去上学'}</span>
-          <small>{inSchool ? '你还在学校里，黑板消息还在' : 'WASD 走动，教室黑板聊天'}</small>
+          <small>{inSchool ? '人还在学校里，收起只是藏窗口' : 'WASD 走动，教室黑板；家里客厅同时还在'}</small>
         </button>
         <button type="button" className="hub-btn" onClick={onHome}>
           <span>回家</span>
-          <small>{inHome ? '已经在房间里，桌面上能看见来串门的人' : '回自己房间，好友点进来就能看见你'}</small>
+          <small>客厅一直在桌面。若在朋友家，点这里回来。</small>
         </button>
         <button type="button" className="hub-btn" onClick={onFriends}>
           <span>好友{incoming > 0 ? `（${incoming}）` : ''}</span>

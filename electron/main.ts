@@ -5,7 +5,7 @@ import type { Server } from 'node:http'
 import { networkInterfaces } from 'node:os'
 import { join } from 'node:path'
 import { SPECIES_LABELS, type AppSettings, type PanelKind, type PetProfile, type PushBubble, type WindowMode } from '../shared/types'
-import { DEFAULT_ROOM_PORT, DEFAULT_ROOM_URL, homePlaceId, isHomePlace, isSchoolPlace, placeTitle, type ClientMsg } from '../shared/world'
+import { DEFAULT_ROOM_PORT, DEFAULT_ROOM_URL, homePlaceId, isHomeGathering, placeTitle, type ClientMsg } from '../shared/world'
 import { startRoomServer } from '../server/roomServer'
 import { loadDotEnv } from './env'
 import { RoomClient } from './roomClient'
@@ -45,8 +45,8 @@ let worldResizeTimer: NodeJS.Timeout | null = null
 const roomClient = new RoomClient()
 
 const PET_SIZE = { width: 80, height: 108 }
-const WORLD_DEFAULT = { width: 560, height: 420 }
-const WORLD_MIN = { width: 400, height: 320 }
+const WORLD_DEFAULT = { width: 820, height: 560 }
+const WORLD_MIN = { width: 520, height: 380 }
 const PANEL_SIZES: Record<PanelKind, { width: number; height: number }> = {
   hub: { width: 300, height: 430 },
   chat: { width: 320, height: 420 },
@@ -269,14 +269,15 @@ function worldSize() {
 
 function worldStatus() {
   const view = roomClient.get()
-  const placeId = view.you?.placeId
+  const schoolId = view.you?.schoolPlaceId
+  const homeId = view.you?.homeId
   const alive = Boolean(worldWin && !worldWin.isDestroyed())
   return {
-    present: Boolean(placeId && isSchoolPlace(placeId)),
+    present: Boolean(schoolId),
     visible: alive && Boolean(worldWin?.isVisible()),
     connected: view.connected,
-    inHome: Boolean(placeId && isHomePlace(placeId)),
-    placeTitle: placeId ? placeTitle(placeId) : '',
+    inHome: Boolean(homeId),
+    placeTitle: schoolId ? placeTitle(schoolId) : homeId ? placeTitle(homeId) : '',
   }
 }
 
@@ -293,18 +294,7 @@ function hideWorld() {
 }
 
 function leaveWorld() {
-  roomClient.enter('away')
-  if (!worldWin || worldWin.isDestroyed()) {
-    worldWin = null
-    broadcastWorldStatus()
-    return
-  }
-  leaveWorldNext = true
-  const target = worldWin
-  worldWin = null
-  target.destroy()
-  leaveWorldNext = false
-  broadcastWorldStatus()
+  hideWorld()
 }
 
 function ensureWorldWindow() {
@@ -372,11 +362,10 @@ async function goHome(ownerId?: string) {
   hidePanel()
   await ensureRoom()
   roomClient.enter(homePlaceId(ownerId || store.get().clientId))
-  hideWorld()
 }
 
 function leaveHome() {
-  roomClient.enter('away')
+  roomClient.enter(homePlaceId(store.get().clientId))
 }
 
 async function showFriends() {
@@ -399,10 +388,10 @@ function bindRoomClient() {
       showBubble(payload)
     }
     if (!view.notice) lastNotice = ''
-    const gathering = Boolean(view.you && isHomePlace(view.you.placeId))
+    const gathering = isHomeGathering(view.you, view.homePeople, store.get().clientId)
     if (win && !win.isDestroyed()) win.setFocusable(gathering)
     if (gathering) {
-      const n = Math.max(1, 1 + view.people.length)
+      const n = Math.max(1, 1 + view.homePeople.length)
       const cols = Math.min(n, 5)
       const rows = Math.ceil(n / 5)
       const next = { width: Math.max(240, cols * 80), height: rows * 108 + 76 }
@@ -423,7 +412,7 @@ async function showWorld() {
   if (!win) return
   hidePanel()
   await ensureRoom()
-  roomClient.enter('school:campus')
+  if (!roomClient.get().you?.schoolPlaceId) roomClient.enter('school:campus')
   ensureWorldWindow()
   if (!worldWin) return
   const loaded = worldWin.webContents.getURL().includes('#world')
@@ -955,7 +944,7 @@ app.whenReady().then(() => {
     createWindow()
     createTray()
     restartPushTimer()
-    void syncRoomHost()
+    void syncRoomHost().then(() => void ensureRoom())
   }
   if (process.platform === 'win32') setTimeout(start, 160)
   else start()
