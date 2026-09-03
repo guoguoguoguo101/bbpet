@@ -10,6 +10,7 @@ function copyPreload(): Plugin {
     mkdirSync('dist-electron', { recursive: true })
     copyFileSync(resolve('electron/preload.cjs'), resolve('dist-electron/preload.cjs'))
     copyFileSync(resolve('electron/apply-shape.ps1'), resolve('dist-electron/apply-shape.ps1'))
+    copyFileSync(resolve('electron/watch-keys.ps1'), resolve('dist-electron/watch-keys.ps1'))
   }
   return {
     name: 'copy-preload',

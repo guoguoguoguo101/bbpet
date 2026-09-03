@@ -1,4 +1,4 @@
-import type { Species } from '../../shared/types'
+import type { PetPose, Species } from '../../shared/types'
 import { getFrame } from '../pet/templates'
 
 export interface ShapeRect {
@@ -8,7 +8,7 @@ export interface ShapeRect {
   h: number
 }
 
-const POSES: Array<'idle' | 'blink' | 'talk'> = ['idle', 'blink', 'talk']
+const POSES: PetPose[] = ['idle', 'blink', 'talk', 'drink', 'sleep', 'wake', 'type', 'phone', 'snack', 'peek', 'game']
 
 export function solidRectsFromPet(species: Species, pixelSize: number, originX: number, originY: number): ShapeRect[] {
   const grid = Array.from({ length: 16 }, () => Array.from({ length: 16 }, () => false))
@@ -52,14 +52,15 @@ function boxRect(node: HTMLElement): ShapeRect {
   }
 }
 
-export function collectPetShape(root: HTMLElement, fallbackSpecies: Species, pixelSize = 5): ShapeRect[] {
+export function collectPetShape(root: HTMLElement, fallbackSpecies: Species, pixelSize = 4): ShapeRect[] {
   const rects: ShapeRect[] = []
   for (const canvas of root.querySelectorAll<HTMLCanvasElement>('canvas.pixel-pet')) {
     const species = (canvas.dataset.species as Species) || fallbackSpecies
     const box = canvas.getBoundingClientRect()
-    rects.push(...solidRectsFromPet(species, pixelSize, box.left, box.top))
+    const pixel = canvas.width / 16 || pixelSize
+    rects.push(...solidRectsFromPet(species, pixel, box.left, box.top))
   }
-  for (const node of root.querySelectorAll<HTMLElement>('.name-plate, .gather-ui, .gather-bubble')) {
+  for (const node of root.querySelectorAll<HTMLElement>('.name-plate, .gather-ui, .gather-bubble, .pet-emote, .wx-umbrella, .wx-snowman, .wx-moon, .wx-star, .wx-juice, .wx-cloud, .demo-caption')) {
     rects.push(boxRect(node))
   }
   return rects.filter((rect) => rect.w > 0 && rect.h > 0)

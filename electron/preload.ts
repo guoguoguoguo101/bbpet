@@ -30,6 +30,7 @@ export interface BbPetApi {
   openUrl: (url: string) => void
   reportBubbleSize: (width: number, height: number) => void
   quit: () => void
+  onPlayDemo: (handler: (id: string) => void) => () => void
   onPush: (handler: (payload: PushBubble) => void) => () => void
   onShowBubble: (handler: (payload: PushBubble) => void) => () => void
   onBubbleClosed: (handler: () => void) => () => void
@@ -40,4 +41,6 @@ export interface BbPetApi {
   onPanelClosed: (handler: () => void) => () => void
   onWorldStatus: (handler: (status: WorldStatus) => void) => () => void
   onRoomState: (handler: (view: RoomView) => void) => () => void
+  onPetPlay: (handler: (play: { lookX: number; lookY: number; typing: boolean }) => void) => () => void
+  onWeather: (handler: (weather: WeatherInfo) => void) => () => void
 }

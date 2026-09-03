@@ -1,5 +1,5 @@
 export type Species = 'cat' | 'dog' | 'rabbit' | 'bird' | 'hamster' | 'blob'
-export type PetPose = 'idle' | 'blink' | 'talk'
+export type PetPose = 'idle' | 'blink' | 'talk' | 'drink' | 'sleep' | 'wake' | 'type' | 'phone' | 'snack' | 'peek' | 'game'
 export type WindowMode = 'pet' | 'bubble'
 export type PanelKind = 'hub' | 'chat' | 'settings' | 'wizard' | 'friends'
 
@@ -66,7 +66,16 @@ export interface WeatherInfo {
   temperature: number
   description: string
   emoji: string
+  code: number
+  isDay: boolean
+  wind: number
+  gear: WeatherGear[]
+  fx: WeatherFx[]
+  dressLine: string
 }
+
+export type WeatherGear = 'shades' | 'raincoat' | 'scarf' | 'beanie' | 'umbrella' | 'snowman' | 'juice'
+export type WeatherFx = 'rain' | 'snow' | 'sun' | 'fog' | 'storm' | 'wind' | 'stars' | 'cloud'
 
 export interface NewsItem {
   title: string

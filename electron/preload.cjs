@@ -29,6 +29,11 @@ const api = {
   openUrl: (url) => ipcRenderer.send('open-url', url),
   reportBubbleSize: (width, height) => ipcRenderer.send('bubble-size', { width, height }),
   quit: () => ipcRenderer.send('quit-app'),
+  onPlayDemo: (handler) => {
+    const listener = (_event, id) => handler(id)
+    ipcRenderer.on('play-demo', listener)
+    return () => ipcRenderer.removeListener('play-demo', listener)
+  },
   onPush: (handler) => {
     const listener = (_event, payload) => handler(payload)
     ipcRenderer.on('push-bubble', listener)
@@ -78,6 +83,16 @@ const api = {
     const listener = (_event, payload) => handler(payload)
     ipcRenderer.on('room-state', listener)
     return () => ipcRenderer.removeListener('room-state', listener)
+  },
+  onPetPlay: (handler) => {
+    const listener = (_event, payload) => handler(payload)
+    ipcRenderer.on('pet-play', listener)
+    return () => ipcRenderer.removeListener('pet-play', listener)
+  },
+  onWeather: (handler) => {
+    const listener = (_event, payload) => handler(payload)
+    ipcRenderer.on('weather', listener)
+    return () => ipcRenderer.removeListener('weather', listener)
   },
 }
 

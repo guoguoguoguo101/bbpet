@@ -364,13 +364,157 @@ function normalize(rows: string[]) {
   return rows.map(padRow)
 }
 
+function overlay(base: string[], stamps: Array<[number, number, string]>) {
+  const grid = normalize(base).map((row) => row.split(''))
+  for (const [x, y, ch] of stamps) {
+    if (!grid[y] || grid[y][x] === undefined) continue
+    grid[y][x] = ch
+  }
+  return grid.map((row) => row.join(''))
+}
+
+const BOWL: Array<[number, number, string]> = [
+  [10, 12, '#'],
+  [11, 12, '#'],
+  [12, 12, '#'],
+  [9, 13, '#'],
+  [10, 13, 'A'],
+  [11, 13, 'A'],
+  [12, 13, 'A'],
+  [13, 13, '#'],
+  [10, 14, '#'],
+  [11, 14, '#'],
+  [12, 14, '#'],
+]
+
+const ZZZ: Array<[number, number, string]> = [
+  [13, 0, 'A'],
+  [14, 0, 'A'],
+  [15, 0, 'A'],
+  [14, 1, 'A'],
+  [13, 2, 'A'],
+  [14, 2, 'A'],
+  [15, 2, 'A'],
+]
+
+const STRETCH: Array<[number, number, string]> = [
+  [0, 1, '#'],
+  [1, 0, '#'],
+  [1, 1, 'B'],
+  [2, 1, '#'],
+  [13, 1, '#'],
+  [14, 0, '#'],
+  [14, 1, 'B'],
+  [15, 1, '#'],
+]
+
+const KEYBOARD: Array<[number, number, string]> = [
+  [5, 12, 'D'],
+  [6, 12, 'B'],
+  [7, 12, 'D'],
+  [2, 14, '#'],
+  [3, 14, 'L'],
+  [4, 14, '#'],
+  [5, 14, 'L'],
+  [6, 14, '#'],
+  [7, 14, 'L'],
+  [8, 14, '#'],
+  [9, 14, 'L'],
+  [10, 14, '#'],
+  [11, 14, 'L'],
+  [12, 14, '#'],
+  [3, 15, '#'],
+  [4, 15, '#'],
+  [5, 15, '#'],
+  [6, 15, '#'],
+  [7, 15, '#'],
+  [8, 15, '#'],
+  [9, 15, '#'],
+  [10, 15, '#'],
+  [11, 15, '#'],
+]
+
+const PHONE: Array<[number, number, string]> = [
+  [11, 8, '#'],
+  [12, 8, '#'],
+  [13, 8, '#'],
+  [11, 9, '#'],
+  [12, 9, 'L'],
+  [13, 9, '#'],
+  [11, 10, '#'],
+  [12, 10, 'A'],
+  [13, 10, '#'],
+  [11, 11, '#'],
+  [12, 11, 'L'],
+  [13, 11, '#'],
+  [11, 12, '#'],
+  [12, 12, 'A'],
+  [13, 12, '#'],
+  [11, 13, '#'],
+  [12, 13, '#'],
+  [13, 13, '#'],
+]
+
+const SNACK: Array<[number, number, string]> = [
+  [2, 12, '#'],
+  [3, 12, 'A'],
+  [4, 12, '#'],
+  [1, 13, '#'],
+  [2, 13, 'A'],
+  [3, 13, 'A'],
+  [4, 13, 'A'],
+  [5, 13, '#'],
+  [2, 14, '#'],
+  [3, 14, 'A'],
+  [4, 14, '#'],
+]
+
+const GAMEPAD: Array<[number, number, string]> = [
+  [3, 13, '#'],
+  [4, 13, 'D'],
+  [5, 13, 'L'],
+  [6, 13, 'L'],
+  [7, 13, 'L'],
+  [8, 13, 'D'],
+  [9, 13, '#'],
+  [3, 14, '#'],
+  [4, 14, 'A'],
+  [5, 14, '#'],
+  [6, 14, '#'],
+  [7, 14, '#'],
+  [8, 14, 'A'],
+  [9, 14, '#'],
+]
+
+const SWEAT: Array<[number, number, string]> = [
+  [1, 2, 'L'],
+  [0, 3, 'L'],
+  [1, 4, 'L'],
+]
+
+function speciesPoses(idle: string[], blink: string[], talk: string[]): Record<PetPose, string[]> {
+  return {
+    idle: normalize(idle),
+    blink: normalize(blink),
+    talk: normalize(talk),
+    drink: overlay(blink, BOWL),
+    sleep: overlay(blink, ZZZ),
+    wake: overlay(idle, STRETCH),
+    type: overlay(idle, KEYBOARD),
+    phone: overlay(idle, PHONE),
+    snack: overlay(idle, SNACK),
+    peek: overlay(idle, SWEAT),
+    game: overlay(idle, GAMEPAD),
+  }
+}
+
 const FRAMES: Record<Species, Record<PetPose, string[]>> = {
-  cat: { idle: normalize(CAT_IDLE), blink: normalize(CAT_BLINK), talk: normalize(CAT_TALK) },
-  dog: { idle: normalize(DOG_IDLE), blink: normalize(DOG_BLINK), talk: normalize(DOG_TALK) },
-  rabbit: { idle: normalize(RABBIT_IDLE), blink: normalize(RABBIT_BLINK), talk: normalize(RABBIT_TALK) },
-  bird: { idle: normalize(BIRD_IDLE), blink: normalize(BIRD_BLINK), talk: normalize(BIRD_TALK) },
-  hamster: { idle: normalize(HAMSTER_IDLE), blink: normalize(HAMSTER_BLINK), talk: normalize(HAMSTER_TALK) },
-  blob: { idle: normalize(BLOB_IDLE), blink: normalize(BLOB_BLINK), talk: normalize(BLOB_TALK) },
+  cat: speciesPoses(CAT_IDLE, CAT_BLINK, CAT_TALK),
+  dog: speciesPoses(DOG_IDLE, DOG_BLINK, DOG_TALK),
+  rabbit: speciesPoses(RABBIT_IDLE, RABBIT_BLINK, RABBIT_TALK),
+  bird: speciesPoses(BIRD_IDLE, BIRD_BLINK, BIRD_TALK),
+  hamster: speciesPoses(HAMSTER_IDLE, HAMSTER_BLINK, HAMSTER_TALK),
+  blob: speciesPoses(BLOB_IDLE, BLOB_BLINK, BLOB_TALK),
 }
 
 export function getFrame(species: Species, pose: PetPose) {

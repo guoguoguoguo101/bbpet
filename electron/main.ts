@@ -1,17 +1,19 @@
-import { app, BrowserWindow, Menu, nativeImage, screen, shell, Tray, ipcMain } from 'electron'
-import { execFile } from 'node:child_process'
+import { app, BrowserWindow, Menu, nativeImage, screen, shell, Tray, ipcMain, type MenuItemConstructorOptions } from 'electron'
+import { execFile, spawn, type ChildProcess } from 'node:child_process'
 import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 import type { Server } from 'node:http'
 import { networkInterfaces } from 'node:os'
 import { join } from 'node:path'
+import { DEMO_ACTIONS, findDemoAction } from '../shared/demoActions'
 import { SPECIES_LABELS, type AppSettings, type PanelKind, type PetProfile, type PushBubble, type WindowMode } from '../shared/types'
+import { pickLine } from '../shared/weatherLines'
 import { DEFAULT_ROOM_PORT, DEFAULT_ROOM_URL, homePlaceId, isHomeGathering, placeTitle, type ClientMsg } from '../shared/world'
 import { startRoomServer } from '../server/roomServer'
 import { loadDotEnv } from './env'
 import { RoomClient } from './roomClient'
 import { fetchNews } from './services/news'
 import { chatWithLlm } from './services/llm'
-import { fetchWeather, formatWeatherLine } from './services/weather'
+import { fetchWeather } from './services/weather'
 import { JsonStore } from './store'
 
 declare const __dirname: string
@@ -33,6 +35,8 @@ let menuAnchor: BrowserWindow | null = null
 let tray: Tray | null = null
 let store: JsonStore
 let pushTimer: NodeJS.Timeout | null = null
+let weatherTimer: NodeJS.Timeout | null = null
+let lastWeather: Awaited<ReturnType<typeof fetchWeather>> | null = null
 let pushToggle = 0
 let quitting = false
 let allowPanelBlurClose = false
@@ -42,9 +46,13 @@ let roomServer: Server | null = null
 let roomHostError = ''
 let leaveWorldNext = false
 let worldResizeTimer: NodeJS.Timeout | null = null
+let petSenseTimer: NodeJS.Timeout | null = null
+let keyWatch: ChildProcess | null = null
+let typingUntil = 0
+let lastPetPlay = ''
 const roomClient = new RoomClient()
 
-const PET_SIZE = { width: 80, height: 108 }
+const PET_SIZE = { width: 64, height: 86 }
 const WORLD_DEFAULT = { width: 820, height: 560 }
 const WORLD_MIN = { width: 520, height: 380 }
 const PANEL_SIZES: Record<PanelKind, { width: number; height: number }> = {
@@ -396,7 +404,7 @@ function bindRoomClient() {
       const n = Math.max(1, 1 + view.homePeople.length)
       const cols = Math.min(n, 5)
       const rows = Math.ceil(n / 5)
-      const next = { width: Math.max(240, cols * 80), height: rows * 108 + 76 }
+      const next = { width: Math.max(192, cols * 64), height: rows * 86 + 76 }
       if (next.width !== petLayout.width || next.height !== petLayout.height) {
         petLayout = next
         placeWindow()
@@ -637,6 +645,39 @@ function getMenuAnchor() {
   return menuAnchor
 }
 
+function playDemoAction(id: string) {
+  if (id === 'off') {
+    hideBubble()
+    sendUi('play-demo', id)
+    return
+  }
+  sendUi('play-demo', id)
+  const action = findDemoAction(id)
+  const line = action?.lines?.length ? pickLine(action.lines) : ''
+  if (!line) return
+  const payload = { kind: 'weather', text: line }
+  sendUi('push-bubble', payload)
+  showBubble(payload)
+}
+
+function testActionMenu(): MenuItemConstructorOptions {
+  const items = (group: 'pose' | 'weather' | 'slack') =>
+    DEMO_ACTIONS.filter((item) => item.group === group).map((item) => ({
+      label: item.group === 'weather' ? `${item.weather.emoji} ${item.label}` : item.label,
+      click: () => playDemoAction(item.id),
+    }))
+  return {
+    label: '测试动作',
+    submenu: [
+      { label: '待机动作', submenu: items('pose') },
+      { label: '摸鱼', submenu: items('slack') },
+      { label: '天气装扮', submenu: items('weather') },
+      { type: 'separator' },
+      { label: '恢复正常', click: () => playDemoAction('off') },
+    ],
+  }
+}
+
 function popupPetMenu() {
   closePetMenu(true)
   petMenuOpenedAt = Date.now()
@@ -656,6 +697,8 @@ function popupPetMenu() {
     { label: '现在看看新闻', click: () => void pushOnce('news') },
     { label: '设置', click: () => showPanel('settings') },
     { type: 'separator' },
+    testActionMenu(),
+    { type: 'separator' },
     { label: '退出', click: () => app.quit() },
   ])
   petMenu.popup({
@@ -669,6 +712,56 @@ function popupPetMenu() {
       if (win) refreshTransparent(win)
     },
   })
+}
+
+function noteTyping() {
+  typingUntil = Date.now() + 520
+}
+
+function stopPetSense() {
+  if (petSenseTimer) {
+    clearInterval(petSenseTimer)
+    petSenseTimer = null
+  }
+  if (keyWatch) {
+    keyWatch.kill()
+    keyWatch = null
+  }
+  lastPetPlay = ''
+}
+
+function startPetSense() {
+  stopPetSense()
+  if (process.platform === 'win32') {
+    const script = join(__dirname, 'watch-keys.ps1')
+    if (existsSync(script)) {
+      keyWatch = spawn(
+        'powershell.exe',
+        ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', script],
+        { windowsHide: true, stdio: ['ignore', 'pipe', 'ignore'] },
+      )
+      keyWatch.stdout?.setEncoding('utf8')
+      keyWatch.stdout?.on('data', (chunk: string) => {
+        if (String(chunk).includes('1')) noteTyping()
+      })
+    }
+  }
+  petSenseTimer = setInterval(() => {
+    if (!win || win.isDestroyed() || win.webContents.isDestroyed()) return
+    const cursor = screen.getCursorScreenPoint()
+    const bounds = win.getBounds()
+    const dx = cursor.x - (bounds.x + Math.round(bounds.width / 2))
+    const dy = cursor.y - (bounds.y + Math.round(bounds.height * 0.32))
+    const payload = {
+      lookX: dx < -42 ? -1 : dx > 42 ? 1 : 0,
+      lookY: dy < -28 ? -1 : dy > 36 ? 1 : 0,
+      typing: Date.now() < typingUntil,
+    }
+    const raw = `${payload.lookX},${payload.lookY},${payload.typing ? 1 : 0}`
+    if (raw === lastPetPlay) return
+    lastPetPlay = raw
+    win.webContents.send('pet-play', payload)
+  }, 90)
 }
 
 function createWindow() {
@@ -713,9 +806,12 @@ function createWindow() {
       win.setBackgroundColor('#00000000')
       win.showInactive()
       clearWindowShape()
-      setTimeout(() => void pushOnce('auto'), 4000)
+      setTimeout(() => {
+        void refreshWeather(true).catch(() => undefined)
+      }, 2500)
     }, 120)
   })
+  startPetSense()
 }
 
 function createTray() {
@@ -731,6 +827,8 @@ function createTray() {
     { label: '现在看看天气', click: () => void pushOnce('weather') },
     { label: '现在看看新闻', click: () => void pushOnce('news') },
     { label: '设置', click: () => showPanel('settings') },
+    { type: 'separator' },
+    testActionMenu(),
     { type: 'separator' },
     { label: '退出', click: () => app.quit() },
   ])
@@ -753,20 +851,30 @@ function sendUi(channel: string, payload?: unknown) {
   win?.webContents.send(channel, payload)
 }
 
+async function refreshWeather(withBubble = false) {
+  const { settings } = store.get()
+  const weather = await fetchWeather(settings.cityName, settings.latitude, settings.longitude)
+  lastWeather = weather
+  sendUi('weather', weather)
+  if (withBubble) {
+    const weatherPayload = {
+      kind: 'weather',
+      text: weather.dressLine,
+    }
+    sendUi('push-bubble', weatherPayload)
+    showBubble(weatherPayload)
+  }
+  return weather
+}
+
 async function pushOnce(kind: 'auto' | 'weather' | 'news') {
   if (!win) return
-  const { settings, pet } = store.get()
+  const { pet } = store.get()
   try {
     const useWeather = kind === 'weather' || (kind === 'auto' && pushToggle % 2 === 0)
     pushToggle += 1
     if (useWeather) {
-      const weather = await fetchWeather(settings.cityName, settings.latitude, settings.longitude)
-      const weatherPayload = {
-        kind: 'weather',
-        text: `${pet.name}：${formatWeatherLine(weather)}，记得出门看一眼天。`,
-      }
-      sendUi('push-bubble', weatherPayload)
-      showBubble(weatherPayload)
+      await refreshWeather(true)
     } else {
       const news = await fetchNews()
       const newsPayload = {
@@ -789,8 +897,10 @@ async function pushOnce(kind: 'auto' | 'weather' | 'news') {
 
 function restartPushTimer() {
   if (pushTimer) clearInterval(pushTimer)
+  if (weatherTimer) clearInterval(weatherTimer)
   const minutes = Math.max(5, store.get().settings.pushIntervalMin || 30)
   pushTimer = setInterval(() => void pushOnce('auto'), minutes * 60 * 1000)
+  weatherTimer = setInterval(() => void refreshWeather(true).catch(() => undefined), 20 * 60 * 1000)
 }
 
 function registerIpc() {
@@ -809,6 +919,7 @@ function registerIpc() {
   ipcMain.handle('save-settings', async (_event, settings: AppSettings) => {
     store.saveSettings(settings)
     restartPushTimer()
+    void refreshWeather(false).catch(() => undefined)
     await syncRoomHost()
     if (roomClient.get().connected || roomClient.get().connecting) {
       const state = store.get()
@@ -838,10 +949,7 @@ function registerIpc() {
     return { ...result, history: store.get().chatHistory }
   })
 
-  ipcMain.handle('fetch-weather', async () => {
-    const { settings } = store.get()
-    return fetchWeather(settings.cityName, settings.latitude, settings.longitude)
-  })
+  ipcMain.handle('fetch-weather', async () => lastWeather || refreshWeather(false))
 
   ipcMain.handle('fetch-news', async () => fetchNews())
 
@@ -924,6 +1032,11 @@ app.whenReady().then(() => {
   store = new JsonStore()
   bindRoomClient()
   registerIpc()
+  app.on('web-contents-created', (_event, contents) => {
+    contents.on('before-input-event', (_inputEvent, input) => {
+      if (input.type === 'keyDown' && input.key && input.key.length <= 2) noteTyping()
+    })
+  })
   const start = () => {
     createWindow()
     createTray()
@@ -936,6 +1049,8 @@ app.whenReady().then(() => {
 
 app.on('before-quit', () => {
   quitting = true
+  if (weatherTimer) clearInterval(weatherTimer)
+  stopPetSense()
   roomClient.disconnect()
   roomServer?.close()
 })
