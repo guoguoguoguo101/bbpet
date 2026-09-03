@@ -1,0 +1,23 @@
+appId: com.internal.bbpet
+productName: BbPet
+copyright: Internal use only
+asar: true
+directories:
+  output: release
+  buildResources: build
+files:
+  - dist/**/*
+  - dist-electron/**/*
+win:
+  target:
+    - nsis
+    - zip
+  icon: build/icon.png
+  artifactName: ${productName}-Setup-${version}.${ext}
+nsis:
+  oneClick: false
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+  shortcutName: BbPet
+  artifactName: ${productName}-Setup-${version}.${ext}
