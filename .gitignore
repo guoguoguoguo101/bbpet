@@ -5,5 +5,6 @@ release/
 .env
 .env.local
 bbpet-friends.json
+.bbpet-pet2/
 .DS_Store
 Thumbs.db

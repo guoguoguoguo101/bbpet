@@ -169,6 +169,7 @@ export function startRoomServer(port: number, options?: { friendsFile?: string }
           facing: 'r',
         }
         friends.upsert(msg.clientId, presence)
+        console.log(`[hello] ${presence.name} ${msg.clientId.slice(0, 8)} 上线`)
         const client: Client = { ws, presence, lastChatAt: 0, chatBurst: 0 }
         clients.set(ws, client)
         byId.set(msg.clientId, client)
@@ -286,7 +287,14 @@ export function startRoomServer(port: number, options?: { friendsFile?: string }
 
       if (msg.type === 'friendRequest') {
         const targetId = String(msg.targetId || '')
+        if (!targetId) {
+          console.log(`[friend] ${client.presence.name} 点了加好友，但没带上对方 id`)
+          send(ws, { type: 'error', message: '没选到同学' })
+          return
+        }
         const result = friends.request(client.presence.clientId, targetId)
+        const otherName = byId.get(targetId)?.presence.name || friends.get(targetId)?.name || targetId.slice(0, 8)
+        console.log(`[friend] ${client.presence.name} -> ${otherName} (${result})`)
         if (result === 'same') {
           send(ws, { type: 'error', message: '不能加自己' })
           return
@@ -296,21 +304,11 @@ export function startRoomServer(port: number, options?: { friendsFile?: string }
           sendFriends(client.presence.clientId)
           return
         }
-        if (result === 'accepted') {
-          send(ws, { type: 'notice', text: '你们成为好友了' })
-          const other = byId.get(targetId)
-          if (other) send(other.ws, { type: 'notice', text: `${client.presence.name} 同意了好友申请` })
-          notifyFriendLists(client.presence.clientId)
-          notifyFriendLists(targetId)
-          return
-        }
-        send(ws, { type: 'notice', text: '好友申请已送出' })
-        sendFriends(client.presence.clientId)
+        notifyFriendLists(client.presence.clientId)
+        notifyFriendLists(targetId)
+        send(ws, { type: 'notice', text: `已添加 ${otherName}` })
         const other = byId.get(targetId)
-        if (other) {
-          send(other.ws, { type: 'notice', text: `${client.presence.name} 想加你为好友` })
-          sendFriends(targetId)
-        }
+        if (other) send(other.ws, { type: 'notice', text: `${client.presence.name} 加你为好友了` })
         return
       }
 

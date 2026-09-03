@@ -1,6 +1,7 @@
 param(
   [Int64]$Hwnd,
-  [string]$RectFile
+  [string]$RectFile = '',
+  [switch]$Clear
 )
 Add-Type -TypeDefinition @"
 using System;
@@ -38,6 +39,10 @@ public static class BbPetShape {
     }
     if (region != IntPtr.Zero) SetWindowRgn(h, region, true);
   }
+  public static void Clear(long hwnd) {
+    SetWindowRgn((IntPtr)hwnd, IntPtr.Zero, true);
+  }
 }
 "@
-[BbPetShape]::Apply($Hwnd, $RectFile)
+if ($Clear) { [BbPetShape]::Clear($Hwnd) }
+elseif ($RectFile) { [BbPetShape]::Apply($Hwnd, $RectFile) }

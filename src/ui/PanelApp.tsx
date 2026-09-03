@@ -32,7 +32,7 @@ export function PanelApp({ kind }: { kind: PanelKind }) {
       offWorld()
       offRoom()
     }
-  }, [])
+  }, [kind])
 
   if (!state) return <div className="boot">桌宠正在起床...</div>
 

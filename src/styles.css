@@ -440,6 +440,7 @@ body.bubble-host #root {
 .world-actor.other {
   pointer-events: auto;
   cursor: pointer;
+  transition: left 90ms linear, top 90ms linear;
 }
 
 .world-actor.picked .world-name {

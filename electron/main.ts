@@ -133,7 +133,8 @@ function placeWindow(_mode?: WindowMode) {
   const size = petLayout
   const wa = screen.getPrimaryDisplay().workArea
   if (!placedOnce) {
-    const x = wa.x + wa.width - size.width - 8
+    const offsetX = Number(process.env.BBPET_OFFSET_X || 0) || 0
+    const x = wa.x + wa.width - size.width - 8 - offsetX
     const y = wa.y + wa.height - size.height - 6
     win.setBounds({ x, y, width: size.width, height: size.height })
     placedOnce = true
@@ -338,21 +339,7 @@ function ensureWorldWindow() {
   })
 }
 
-function isLocalRoom(url: string) {
-  return !url || /127\.0\.0\.1|localhost/i.test(url)
-}
-
 async function ensureRoom() {
-  if (!roomServer && isLocalRoom(store.get().settings.roomUrl)) {
-    try {
-      roomServer = await startRoomServer(DEFAULT_ROOM_PORT, {
-        friendsFile: join(app.getPath('userData'), 'bbpet-friends.json'),
-      })
-      roomHostError = ''
-    } catch {
-      roomHostError = ''
-    }
-  }
   const state = store.get()
   const url = state.settings.roomUrl.trim() || DEFAULT_ROOM_URL
   await roomClient.ensure(url, state.clientId, state.pet)
@@ -375,6 +362,8 @@ async function showFriends() {
 
 function bindRoomClient() {
   let lastNotice = ''
+  let lastGathering: boolean | null = null
+  let lastSchoolPlace: string | null = null
   roomClient.onChange = () => {
     const view = roomClient.get()
     win?.webContents.send('room-state', view)
@@ -389,7 +378,20 @@ function bindRoomClient() {
     }
     if (!view.notice) lastNotice = ''
     const gathering = isHomeGathering(view.you, view.homePeople, store.get().clientId)
-    if (win && !win.isDestroyed()) win.setFocusable(gathering)
+    if (lastGathering !== gathering) {
+      lastGathering = gathering
+      if (win && !win.isDestroyed()) win.setFocusable(gathering)
+    }
+    const schoolId = view.you?.schoolPlaceId ?? null
+    if (schoolId && schoolId !== lastSchoolPlace) {
+      lastSchoolPlace = schoolId
+      if (worldWin && !worldWin.isDestroyed() && worldWin.isVisible()) {
+        worldWin.focus()
+        worldWin.webContents.focus()
+      }
+    } else if (!schoolId) {
+      lastSchoolPlace = null
+    }
     if (gathering) {
       const n = Math.max(1, 1 + view.homePeople.length)
       const cols = Math.min(n, 5)
@@ -554,46 +556,27 @@ function nativeHwnd(target: BrowserWindow) {
 
 type ShapeRect = { x: number; y: number; w: number; h: number }
 let lastShape: ShapeRect[] = []
-let shapeBusy = false
-let shapeTimer: NodeJS.Timeout | null = null
 
-function scaleShape(target: BrowserWindow, rects: ShapeRect[]) {
-  const scale = screen.getDisplayMatching(target.getBounds()).scaleFactor || 1
-  return rects.map((rect) => ({
-    x: Math.round(rect.x * scale),
-    y: Math.round(rect.y * scale),
-    w: Math.max(1, Math.round(rect.w * scale)),
-    h: Math.max(1, Math.round(rect.h * scale)),
-  }))
-}
-
-function applyWindowShape(rects: ShapeRect[]) {
-  if (!win || win.isDestroyed() || process.platform !== 'win32' || rects.length === 0) return
-  lastShape = rects
-  if (shapeBusy) {
-    if (shapeTimer) clearTimeout(shapeTimer)
-    shapeTimer = setTimeout(() => applyWindowShape(lastShape), 120)
-    return
-  }
+function clearWindowShape() {
+  if (!win || win.isDestroyed() || process.platform !== 'win32') return
+  lastShape = []
   const source = join(__dirname, 'apply-shape.ps1')
   if (!existsSync(source)) return
-  shapeBusy = true
   try {
     const script = join(app.getPath('temp'), 'bbpet-apply-shape.ps1')
-    const rectFile = join(app.getPath('temp'), 'bbpet-shape.txt')
     writeFileSync(script, readFileSync(source, 'utf8'))
-    writeFileSync(rectFile, scaleShape(win, rects).map((rect) => `${rect.x},${rect.y},${rect.w},${rect.h}`).join(';'))
     execFile(
       'powershell.exe',
-      ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', script, '-Hwnd', nativeHwnd(win), '-RectFile', rectFile],
+      ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', script, '-Hwnd', nativeHwnd(win), '-Clear'],
       { windowsHide: true },
-      () => {
-        shapeBusy = false
-      },
     )
   } catch {
-    shapeBusy = false
+    // keep a rectangular hit target
   }
+}
+
+function applyWindowShape(_rects: ShapeRect[]) {
+  // Cropping the HWND broke left-click and drag; keep the full window.
 }
 
 function refreshTransparent(target: BrowserWindow) {
@@ -610,6 +593,7 @@ function refreshTransparent(target: BrowserWindow) {
 function setupTransparentGuards(target: BrowserWindow) {
   target.webContents.setBackgroundThrottling(false)
   refreshTransparent(target)
+  clearWindowShape()
   if (process.platform !== 'win32') return
   target.on('blur', () => {
     applyIgnoreMouse(true)
@@ -728,7 +712,7 @@ function createWindow() {
       if (!win) return
       win.setBackgroundColor('#00000000')
       win.showInactive()
-      if (lastShape.length) applyWindowShape(lastShape)
+      clearWindowShape()
       setTimeout(() => void pushOnce('auto'), 4000)
     }, 120)
   })

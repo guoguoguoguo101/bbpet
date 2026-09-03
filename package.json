@@ -8,6 +8,7 @@
   "scripts": {
     "start": "vite",
     "dev": "vite",
+    "start:pet2": "node scripts/start-pet2.mjs",
     "room": "tsx server/cli.ts",
     "build": "vite build",
     "dist": "node scripts/write-icon.mjs && vite build && electron-builder",

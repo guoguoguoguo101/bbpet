@@ -115,19 +115,13 @@ function PetApp() {
     const onDown = (event: PointerEvent) => {
       if (event.button !== 0 || !isPetSolid(event.clientX, event.clientY)) return
       if (event.target instanceof HTMLElement && event.target.closest('.gather-ui')) return
+      dragging.current = true
       pressOrigin.current = { x: event.screenX, y: event.screenY }
       setIgnore(false)
+      window.bbpet.dragStart()
     }
 
     const syncHit = (event: PointerEvent) => {
-      if (pressOrigin.current && !dragging.current) {
-        const moved = Math.abs(event.screenX - pressOrigin.current.x) + Math.abs(event.screenY - pressOrigin.current.y) > 6
-        if (moved) {
-          dragging.current = true
-          setIgnore(false)
-          window.bbpet.dragStart()
-        }
-      }
       if (dragging.current) {
         setIgnore(false)
         return
@@ -137,16 +131,14 @@ function PetApp() {
 
     const onUp = (event: PointerEvent) => {
       const origin = pressOrigin.current
-      const wasPressing = Boolean(origin)
       const moved = origin ? Math.abs(event.screenX - origin.x) + Math.abs(event.screenY - origin.y) > 6 : false
       const wasDragging = dragging.current
       dragging.current = false
       pressOrigin.current = null
       if (wasDragging) window.bbpet.dragEnd()
       setIgnore(!isPetSolid(event.clientX, event.clientY))
-      const onChat = event.target instanceof HTMLElement && event.target.closest('.gather-ui')
-      if (onChat) return
-      if (wasPressing && !moved && event.button === 0 && isPetSolid(event.clientX, event.clientY)) {
+      if (event.target instanceof HTMLElement && event.target.closest('.gather-ui')) return
+      if (wasDragging && !moved && event.button === 0 && isPetSolid(event.clientX, event.clientY)) {
         window.bbpet.openPanel('hub')
       }
     }

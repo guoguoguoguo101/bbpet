@@ -33,8 +33,12 @@ export function createFriendsStore(file: string) {
     writeFileSync(file, JSON.stringify(data), 'utf8')
   }
 
-  const save = () => {
+  const save = (immediate = false) => {
     if (timer) clearTimeout(timer)
+    if (immediate) {
+      flush()
+      return
+    }
     timer = setTimeout(flush, 200)
   }
 
@@ -70,23 +74,17 @@ export function createFriendsStore(file: string) {
       return data.users[id] ?? null
     },
     isFriend,
-    request(from: string, to: string): 'accepted' | 'pending' | 'same' | 'already' {
+    request(from: string, to: string): 'accepted' | 'same' | 'already' {
       if (from === to) return 'same'
       if (isFriend(from, to)) return 'already'
       const a = ensure(from)
       const b = ensure(to)
-      if (a.incoming.includes(to)) {
-        a.incoming = a.incoming.filter((id) => id !== to)
-        b.incoming = b.incoming.filter((id) => id !== from)
-        if (!a.friends.includes(to)) a.friends.push(to)
-        if (!b.friends.includes(from)) b.friends.push(from)
-        save()
-        return 'accepted'
-      }
-      if (b.incoming.includes(from)) return 'pending'
-      b.incoming.push(from)
-      save()
-      return 'pending'
+      a.incoming = a.incoming.filter((id) => id !== to)
+      b.incoming = b.incoming.filter((id) => id !== from)
+      if (!a.friends.includes(to)) a.friends.push(to)
+      if (!b.friends.includes(from)) b.friends.push(from)
+      save(true)
+      return 'accepted'
     },
     accept(me: string, from: string) {
       const a = ensure(me)

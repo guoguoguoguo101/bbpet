@@ -64,6 +64,8 @@ export function WorldApp() {
   const [zoom, setZoom] = useState(1.8)
   const [stageSize, setStageSize] = useState({ w: 1, h: 1 })
   const [friendIds, setFriendIds] = useState<string[]>([])
+  const [movingOthers, setMovingOthers] = useState<Record<string, number>>({})
+  const lastOthersRef = useRef<Record<string, { x: number; y: number }>>({})
   const [inspect, setInspect] = useState<{ clientId: string; name: string; x: number; y: number } | null>(null)
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const stageRef = useRef<HTMLDivElement>(null)
@@ -117,6 +119,15 @@ export function WorldApp() {
         setMe(meRef.current)
       }
       setPlaceId(schoolId)
+      const moved: Record<string, number> = {}
+      for (const person of room.people) {
+        const prev = lastOthersRef.current[person.clientId]
+        if (prev && (Math.abs(prev.x - person.x) > 0.4 || Math.abs(prev.y - person.y) > 0.4)) {
+          moved[person.clientId] = Date.now() + 220
+        }
+        lastOthersRef.current[person.clientId] = { x: person.x, y: person.y }
+      }
+      if (Object.keys(moved).length) setMovingOthers((current) => ({ ...current, ...moved }))
       setOthers(room.people)
       setBoard(room.board)
       setStatus(PLACES[schoolId].title)
@@ -176,7 +187,10 @@ export function WorldApp() {
       if (key) keysRef.current[key] = false
     }
     const onBlur = () => {
-      keysRef.current = { w: false, a: false, s: false, d: false }
+      window.setTimeout(() => {
+        if (document.hasFocus()) return
+        keysRef.current = { w: false, a: false, s: false, d: false }
+      }, 50)
     }
     window.addEventListener('keydown', onDown, true)
     window.addEventListener('keyup', onUp, true)
@@ -192,6 +206,12 @@ export function WorldApp() {
   }, [inspect])
 
   useEffect(() => {
+    if (!isSchoolPlace(placeId)) return
+    const id = window.requestAnimationFrame(() => rootRef.current?.focus())
+    return () => window.cancelAnimationFrame(id)
+  }, [placeId])
+
+  useEffect(() => {
     let frame = 0
     let last = performance.now()
     const tick = (now: number) => {
@@ -203,7 +223,6 @@ export function WorldApp() {
       const walking = dx !== 0 || dy !== 0
       const currentPlace = placeRef.current
       if (document.hidden || !isSchoolPlace(currentPlace)) {
-        keysRef.current = { w: false, a: false, s: false, d: false }
         frame = window.requestAnimationFrame(tick)
         return
       }
@@ -233,6 +252,16 @@ export function WorldApp() {
           }
         }
       }
+      setMovingOthers((current) => {
+        const next: Record<string, number> = {}
+        let changed = false
+        const stamp = Date.now()
+        for (const [id, until] of Object.entries(current)) {
+          if (until > stamp) next[id] = until
+          else changed = true
+        }
+        return changed ? next : current
+      })
       setBubbles((current) => {
         const next: Record<string, Bubble> = {}
         let changed = false
@@ -331,7 +360,7 @@ export function WorldApp() {
 
   const visibleBoard = board.slice(-7)
   const nearbyHint = place.kind === 'classroom' ? '黑板只有本班听得见' : '走近才看得到气泡'
-  const hint = error || notice || `WASD 移动 · 滚轮放大缩小 · 点同学加好友 · ${nearbyHint}`
+  const hint = error || notice || `WASD 移动 · 点同学加好友${friendIds.length ? ` · 好友 ${friendIds.length}` : ''} · ${nearbyHint}`
 
   return (
     <div
@@ -343,7 +372,9 @@ export function WorldApp() {
           chattingRef.current = true
           return
         }
-        const onActor = event.target instanceof HTMLElement && event.target.closest('.world-actor.other')
+        const el = event.target instanceof HTMLElement ? event.target : null
+        if (el?.closest('.world-inspect, .world-hud, .world-bar')) return
+        const onActor = el?.closest('.world-actor.other')
         if (!onActor) setInspect(null)
         chattingRef.current = false
         inputRef.current?.blur()
@@ -392,7 +423,7 @@ export function WorldApp() {
             return (
               <div
                 key={actor.clientId}
-                className={`world-actor${actor.self ? ' self' : ' other'}${moving && actor.self ? ' walking' : ''}${inspect?.clientId === actor.clientId ? ' picked' : ''}`}
+                className={`world-actor${actor.self ? ' self' : ' other'}${(moving && actor.self) || movingOthers[actor.clientId] ? ' walking' : ''}${inspect?.clientId === actor.clientId ? ' picked' : ''}`}
                 style={{ left: actor.x, top: actor.y, width: PET_SIZE, height: PET_SIZE }}
                 onMouseDown={(event) => {
                   if (actor.self) return
@@ -416,6 +447,7 @@ export function WorldApp() {
         {inspect && (
           <div
             className="world-inspect"
+            onMouseDown={(event) => event.stopPropagation()}
             style={{
               left: Math.max(8, inspect.x * view.scale + view.left + 36),
               top: Math.max(8, inspect.y * view.scale + view.top),
@@ -425,7 +457,8 @@ export function WorldApp() {
             {friendIds.includes(inspect.clientId) ? (
               <button
                 type="button"
-                onClick={() => {
+                onMouseDown={(event) => {
+                  event.stopPropagation()
                   window.bbpet.goHome(inspect.clientId)
                   setInspect(null)
                 }}
@@ -435,15 +468,24 @@ export function WorldApp() {
             ) : (
               <button
                 type="button"
-                onClick={() => {
+                onMouseDown={(event) => {
+                  event.preventDefault()
+                  event.stopPropagation()
                   window.bbpet.roomSend({ type: 'friendRequest', targetId: inspect.clientId })
-                  setInspect(null)
+                  setFriendIds((ids) => (ids.includes(inspect.clientId) ? ids : [...ids, inspect.clientId]))
                 }}
               >
                 加好友
               </button>
             )}
-            <button type="button" className="ghost" onClick={() => setInspect(null)}>
+            <button
+              type="button"
+              className="ghost"
+              onMouseDown={(event) => {
+                event.stopPropagation()
+                setInspect(null)
+              }}
+            >
               取消
             </button>
           </div>
