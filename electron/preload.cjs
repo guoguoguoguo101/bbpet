@@ -18,6 +18,8 @@ const api = {
   setWindowShape: (rects) => ipcRenderer.send('set-window-shape', rects),
   resizeWindow: (mode) => ipcRenderer.send('resize-window', mode),
   reportPetLayout: (size) => ipcRenderer.send('pet-layout', size),
+  playFlyer: (payload) => ipcRenderer.send('play-flyer', payload),
+  hideFlyer: () => ipcRenderer.send('hide-flyer'),
   dragStart: () => ipcRenderer.send('drag-start'),
   dragEnd: () => ipcRenderer.send('drag-end'),
   popupPetMenu: () => ipcRenderer.send('pet-menu'),
@@ -86,6 +88,11 @@ const api = {
     ipcRenderer.on('room-state', listener)
     return () => ipcRenderer.removeListener('room-state', listener)
   },
+  onRoomPoses: (handler) => {
+    const listener = (_event, payload) => handler(payload)
+    ipcRenderer.on('room-poses', listener)
+    return () => ipcRenderer.removeListener('room-poses', listener)
+  },
   onPetPlay: (handler) => {
     const listener = (_event, payload) => handler(payload)
     ipcRenderer.on('pet-play', listener)
@@ -95,6 +102,11 @@ const api = {
     const listener = (_event, payload) => handler(payload)
     ipcRenderer.on('weather', listener)
     return () => ipcRenderer.removeListener('weather', listener)
+  },
+  onShowFlyer: (handler) => {
+    const listener = (_event, payload) => handler(payload)
+    ipcRenderer.on('show-flyer', listener)
+    return () => ipcRenderer.removeListener('show-flyer', listener)
   },
 }
 

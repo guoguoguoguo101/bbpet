@@ -1,7 +1,8 @@
+import { GOMOKU_INVITE_MS } from '../shared/offers'
 import { afterMove, emptyBoard, type Stone } from '../shared/gomoku'
 import type { GameEndReason, GamePlayer, GameResult, GameStatus, GameView } from '../shared/world'
 
-export const INVITE_MS = 60_000
+export const INVITE_MS = GOMOKU_INVITE_MS
 export const TURN_MS = 30_000
 export const DISCONNECT_MS = 30_000
 

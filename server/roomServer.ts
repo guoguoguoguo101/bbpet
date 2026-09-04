@@ -6,6 +6,8 @@ import {
   BOARD_LIMIT,
   DIRECTED_EMOTES,
   PLACES,
+  POSE_TICK_MS,
+  SCHOOL_CROWD_CAP,
   chatKindFor,
   clampMove,
   defaultSpawn,
@@ -18,6 +20,7 @@ import {
   isPlaceId,
   isSchoolPlace,
   isSyncPose,
+  clampLook,
   sanitizeChat,
   sanitizeDress,
   spawnAfterEnter,
@@ -29,10 +32,12 @@ import {
   type PetDress,
   type PlaceId,
   type Presence,
+  type SchoolPlaceId,
   type ServerMsg,
 } from '../shared/world'
 import { createFriendsStore } from './friendsStore'
 import { createGomokuTable } from './gomokuTable'
+import { clampMoveSpeed, roundPose, schoolHasRoom } from '../shared/sync'
 
 interface Client {
   ws: WebSocket
@@ -42,6 +47,7 @@ interface Client {
   lastPoseAt: number
   lastEmoteAt: number
   lastDressAt: number
+  lastMoveAt: number
 }
 
 export function startRoomServer(port: number, options?: { friendsFile?: string }): Promise<Server> {
@@ -52,6 +58,8 @@ export function startRoomServer(port: number, options?: { friendsFile?: string }
   const wss = new WebSocketServer({ server: httpServer })
   const clients = new Map<WebSocket, Client>()
   const byId = new Map<string, Client>()
+  const occupants = new Map<PlaceId, Set<Client>>()
+  const dirtyMoves = new Set<Client>()
   const boards = new Map<PlaceId, ChatLine[]>()
   const friends = createFriendsStore(options?.friendsFile || join(process.cwd(), 'bbpet-friends.json'))
 
@@ -131,11 +139,39 @@ export function startRoomServer(port: number, options?: { friendsFile?: string }
     for (const otherId of rec.incoming) sendFriends(otherId)
   }
 
+  const occupy = (placeId: PlaceId | null | undefined, client: Client) => {
+    if (!placeId || placeId === 'away') return
+    let set = occupants.get(placeId)
+    if (!set) {
+      set = new Set()
+      occupants.set(placeId, set)
+    }
+    set.add(client)
+  }
+
+  const vacate = (placeId: PlaceId | null | undefined, client: Client) => {
+    if (!placeId || placeId === 'away') return
+    const set = occupants.get(placeId)
+    if (!set) return
+    set.delete(client)
+    if (!set.size) occupants.delete(placeId)
+  }
+
+  const schoolCrowd = () => {
+    let count = 0
+    for (const id of Object.keys(PLACES) as SchoolPlaceId[]) count += occupants.get(id)?.size ?? 0
+    return count
+  }
+
   const peopleIn = (placeId: PlaceId, exceptId?: string) => {
     if (placeId === 'away') return []
-    return [...byId.values()]
-      .filter((item) => inPlace(item.presence, placeId) && item.presence.clientId !== exceptId)
-      .map((item) => item.presence)
+    const set = occupants.get(placeId)
+    if (!set) return []
+    const people: Presence[] = []
+    for (const item of set) {
+      if (item.presence.clientId !== exceptId) people.push(item.presence)
+    }
+    return people
   }
 
   const boardOf = (placeId: PlaceId) => boards.get(placeId) ?? []
@@ -149,8 +185,33 @@ export function startRoomServer(port: number, options?: { friendsFile?: string }
 
   const broadcast = (placeId: PlaceId, msg: ServerMsg, except?: WebSocket) => {
     if (placeId === 'away') return
-    for (const [socket, client] of clients) {
-      if (inPlace(client.presence, placeId) && socket !== except) send(socket, msg)
+    const set = occupants.get(placeId)
+    if (!set) return
+    for (const client of set) {
+      if (client.ws !== except) send(client.ws, msg)
+    }
+  }
+
+  const flushPoses = () => {
+    if (!dirtyMoves.size) return
+    const batches = new Map<SchoolPlaceId, { id: string; x: number; y: number; facing: 'l' | 'r' }[]>()
+    for (const client of dirtyMoves) {
+      const school = client.presence.schoolPlaceId
+      if (!school) continue
+      const items = batches.get(school) ?? []
+      items.push({
+        id: client.presence.clientId,
+        x: client.presence.x,
+        y: client.presence.y,
+        facing: client.presence.facing,
+      })
+      batches.set(school, items)
+    }
+    dirtyMoves.clear()
+    const t = Date.now()
+    for (const [placeId, items] of batches) {
+      if (!items.length) continue
+      broadcast(placeId, { type: 'poses', placeId, t, items })
     }
   }
 
@@ -181,7 +242,9 @@ export function startRoomServer(port: number, options?: { friendsFile?: string }
     if (guest.presence.homeId === own) return
     const from = guest.presence.homeId
     broadcast(from, { type: 'leave', clientId: guest.presence.clientId, placeId: from }, guest.ws)
+    vacate(from, guest)
     guest.presence.homeId = own
+    occupy(own, guest)
     guest.presence.placeId = displayPlace(guest.presence)
     guest.presence.pose = 'idle'
     send(guest.ws, { type: 'snapshot', you: guest.presence, snapshot: snapshot(own, guest.presence.clientId) })
@@ -210,14 +273,17 @@ export function startRoomServer(port: number, options?: { friendsFile?: string }
     if (!client) return
     clients.delete(ws)
     if (byId.get(client.presence.clientId) === client) byId.delete(client.presence.clientId)
+    dirtyMoves.delete(client)
     games.onDisconnect(client.presence.clientId)
     broadcast(client.presence.homeId, { type: 'leave', clientId: client.presence.clientId, placeId: client.presence.homeId })
+    vacate(client.presence.homeId, client)
     if (client.presence.schoolPlaceId) {
       broadcast(client.presence.schoolPlaceId, {
         type: 'leave',
         clientId: client.presence.clientId,
         placeId: client.presence.schoolPlaceId,
       })
+      vacate(client.presence.schoolPlaceId, client)
     }
     notifyFriendLists(client.presence.clientId)
     bounceVisitors(homePlaceId(client.presence.clientId))
@@ -267,13 +333,16 @@ export function startRoomServer(port: number, options?: { friendsFile?: string }
           y: spawn.y,
           facing: 'r',
           pose: 'idle',
+          lookX: 0,
+          lookY: 0,
           dress: { gear: [], fx: [] },
         }
         friends.upsert(msg.clientId, presence)
         console.log(`[hello] ${presence.name} ${msg.clientId.slice(0, 8)} 上线`)
-        const client: Client = { ws, presence, lastChatAt: 0, chatBurst: 0, lastPoseAt: 0, lastEmoteAt: 0, lastDressAt: 0 }
+        const client: Client = { ws, presence, lastChatAt: 0, chatBurst: 0, lastPoseAt: 0, lastEmoteAt: 0, lastDressAt: 0, lastMoveAt: 0 }
         clients.set(ws, client)
         byId.set(msg.clientId, client)
+        occupy(homeId, client)
         games.onReconnect(msg.clientId)
         send(ws, {
           type: 'welcome',
@@ -312,7 +381,9 @@ export function startRoomServer(port: number, options?: { friendsFile?: string }
           const from = client.presence.homeId
           const leavingOwn = from === homePlaceId(client.presence.clientId)
           broadcast(from, { type: 'leave', clientId: client.presence.clientId, placeId: from }, ws)
+          vacate(from, client)
           client.presence.homeId = to
+          occupy(to, client)
           client.presence.placeId = displayPlace(client.presence)
           client.presence.pose = 'idle'
           send(ws, { type: 'snapshot', you: client.presence, snapshot: snapshot(to, client.presence.clientId) })
@@ -325,13 +396,21 @@ export function startRoomServer(port: number, options?: { friendsFile?: string }
 
         if (isSchoolPlace(to)) {
           if (to === client.presence.schoolPlaceId) return
+          if (!schoolHasRoom(schoolCrowd(), Boolean(client.presence.schoolPlaceId))) {
+            send(ws, { type: 'notice', text: `学校已经有 ${SCHOOL_CROWD_CAP} 人了，先等一等` })
+            return
+          }
           const from = client.presence.schoolPlaceId
           const spawn = spawnAfterEnter(from ?? client.presence.homeId, to)
           if (from) broadcast(from, { type: 'leave', clientId: client.presence.clientId, placeId: from }, ws)
+          vacate(from, client)
           client.presence.schoolPlaceId = to
+          occupy(to, client)
           client.presence.placeId = to
-          client.presence.x = spawn.x
-          client.presence.y = spawn.y
+          const pos = roundPose(spawn.x, spawn.y)
+          client.presence.x = pos.x
+          client.presence.y = pos.y
+          dirtyMoves.delete(client)
           send(ws, { type: 'snapshot', you: client.presence, snapshot: snapshot(to, client.presence.clientId) })
           broadcast(to, { type: 'join', person: client.presence, placeId: to }, ws)
           notifyFriendLists(client.presence.clientId)
@@ -343,21 +422,17 @@ export function startRoomServer(port: number, options?: { friendsFile?: string }
         const school = client.presence.schoolPlaceId
         if (!school) return
         const place = PLACES[school]
-        const next = clampMove(place, client.presence.x, client.presence.y, Number(msg.x) || 0, Number(msg.y) || 0)
-        client.presence.x = next.x
-        client.presence.y = next.y
+        const now = Date.now()
+        const dt = client.lastMoveAt ? Math.min(250, now - client.lastMoveAt) : POSE_TICK_MS
+        const wanted = roundPose(Number(msg.x) || 0, Number(msg.y) || 0)
+        const stepped = clampMoveSpeed(client.presence.x, client.presence.y, wanted.x, wanted.y, dt)
+        const next = clampMove(place, client.presence.x, client.presence.y, stepped.x, stepped.y)
+        const pos = roundPose(next.x, next.y)
+        client.presence.x = pos.x
+        client.presence.y = pos.y
         client.presence.facing = msg.facing === 'l' ? 'l' : 'r'
-        broadcast(
-          school,
-          {
-            type: 'move',
-            clientId: client.presence.clientId,
-            x: next.x,
-            y: next.y,
-            facing: client.presence.facing,
-          },
-          ws,
-        )
+        client.lastMoveAt = now
+        dirtyMoves.add(client)
         return
       }
 
@@ -395,14 +470,24 @@ export function startRoomServer(port: number, options?: { friendsFile?: string }
         if (!isSyncPose(msg.pose)) return
         const place = resolvePlace(client, msg.placeId)
         if (!place) return
+        const lookX = clampLook(msg.lookX)
+        const lookY = clampLook(msg.lookY)
+        const same =
+          client.presence.pose === msg.pose &&
+          (client.presence.lookX || 0) === lookX &&
+          (client.presence.lookY || 0) === lookY
         const now = Date.now()
-        if (now - client.lastPoseAt < 400) return
+        if (same && now - client.lastPoseAt < 400) return
         client.lastPoseAt = now
         client.presence.pose = msg.pose
+        client.presence.lookX = lookX
+        client.presence.lookY = lookY
         const payload: ServerMsg = {
           type: 'pose',
           clientId: client.presence.clientId,
           pose: msg.pose,
+          lookX,
+          lookY,
           placeId: place,
         }
         send(ws, payload)
@@ -414,9 +499,11 @@ export function startRoomServer(port: number, options?: { friendsFile?: string }
         const place = resolvePlace(client, msg.placeId)
         if (!place) return
         const now = Date.now()
-        if (now - client.lastDressAt < 400) return
-        client.lastDressAt = now
         const dress: PetDress = sanitizeDress(msg.dress)
+        const same =
+          JSON.stringify(client.presence.dress) === JSON.stringify(dress)
+        if (same && now - client.lastDressAt < 400) return
+        client.lastDressAt = now
         client.presence.dress = dress
         const payload: ServerMsg = {
           type: 'dress',
@@ -530,6 +617,9 @@ export function startRoomServer(port: number, options?: { friendsFile?: string }
     ws.on('close', () => drop(ws))
     ws.on('error', () => drop(ws))
   })
+
+  const poseTimer = setInterval(flushPoses, POSE_TICK_MS)
+  httpServer.on('close', () => clearInterval(poseTimer))
 
   return new Promise((resolve, reject) => {
     httpServer.once('error', reject)

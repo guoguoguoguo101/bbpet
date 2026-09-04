@@ -4,7 +4,8 @@ import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 import type { Server } from 'node:http'
 import { networkInterfaces } from 'node:os'
 import { join } from 'node:path'
-import { DEMO_ACTIONS, findDemoAction } from '../shared/demoActions'
+import { ACTION_HOLD_MS, DEMO_ACTIONS, findDemoAction } from '../shared/demoActions'
+import { FLYER_SIZE, flyerPath, flyerPoint, flyerSeat, yardMetrics, type FlyerPlay } from '../shared/homeActions'
 import { SPECIES_LABELS, type AppSettings, type PanelKind, type PetProfile, type PushBubble, type WindowMode } from '../shared/types'
 import { pickLine } from '../shared/weatherLines'
 import { DEFAULT_ROOM_PORT, DEFAULT_ROOM_URL, homePlaceId, isHomeGathering, placeTitle, type ClientMsg } from '../shared/world'
@@ -32,6 +33,9 @@ let panelWin: BrowserWindow | null = null
 let bubbleWin: BrowserWindow | null = null
 let worldWin: BrowserWindow | null = null
 let gameWin: BrowserWindow | null = null
+let flyerWin: BrowserWindow | null = null
+let flyerTimer: NodeJS.Timeout | null = null
+let flyerToken = 0
 let lastGameStatus: string | null = null
 let menuAnchor: BrowserWindow | null = null
 let tray: Tray | null = null
@@ -60,6 +64,7 @@ function pinDeskPet() {
   pinOnTop(win)
   pinOnTop(panelWin)
   pinOnTop(bubbleWin)
+  pinOnTop(flyerWin)
 }
 
 function keepPinned(target: BrowserWindow) {
@@ -181,6 +186,7 @@ function placeWindow(_mode?: WindowMode) {
 let bubblePayload: PushBubble | null = null
 let bubbleTimer: NodeJS.Timeout | null = null
 let bubbleSize = { width: 200, height: 72 }
+let poseBubble = false
 
 function hideBubble() {
   if (bubbleTimer) {
@@ -188,8 +194,136 @@ function hideBubble() {
     bubbleTimer = null
   }
   bubblePayload = null
+  poseBubble = false
   bubbleWin?.hide()
   sendUi('bubble-closed')
+}
+
+function hideFlyer() {
+  flyerToken += 1
+  if (flyerTimer) {
+    clearInterval(flyerTimer)
+    flyerTimer = null
+  }
+  if (flyerWin && !flyerWin.isDestroyed()) flyerWin.hide()
+}
+
+function ensureFlyerWindow() {
+  if (flyerWin && !flyerWin.isDestroyed()) return
+  flyerWin = new BrowserWindow({
+    width: FLYER_SIZE,
+    height: FLYER_SIZE,
+    show: false,
+    frame: false,
+    transparent: true,
+    alwaysOnTop: true,
+    skipTaskbar: true,
+    resizable: false,
+    hasShadow: false,
+    thickFrame: false,
+    fullscreenable: false,
+    focusable: false,
+    roundedCorners: false,
+    title: ' ',
+    backgroundColor: '#00000000',
+    paintWhenInitiallyHidden: true,
+    webPreferences: {
+      preload: join(__dirname, 'preload.cjs'),
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: false,
+    },
+  })
+  flyerWin.setMenuBarVisibility(false)
+  flyerWin.setTitle(' ')
+  flyerWin.setIgnoreMouseEvents(true, { forward: true })
+  flyerWin.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true })
+  keepPinned(flyerWin)
+  pinOnTop(flyerWin)
+  flyerWin.on('close', (event) => {
+    if (quitting) return
+    event.preventDefault()
+    hideFlyer()
+  })
+}
+
+function warmupFlyer() {
+  ensureFlyerWindow()
+  if (!flyerWin || flyerWin.isDestroyed()) return
+  if (!flyerWin.webContents.getURL().includes('#flyer')) loadPage(flyerWin, 'flyer')
+}
+
+function playFlyer(payload: FlyerPlay) {
+  if (!win || !payload?.id || !payload.species || !payload.colors) return
+  if (!Number.isFinite(payload.slotX) || !Number.isFinite(payload.slotY)) return
+  const duration = Math.min(4000, Math.max(800, Math.round(payload.duration || 0)))
+  const dir = payload.dir === -1 ? -1 : 1
+  const token = ++flyerToken
+  if (flyerTimer) {
+    clearInterval(flyerTimer)
+    flyerTimer = null
+  }
+  ensureFlyerWindow()
+  if (!flyerWin) return
+
+  const pet = win.getBounds()
+  const wa = screen.getDisplayMatching(pet).workArea
+  const seat = flyerSeat(pet.x, pet.y, payload.slotX, payload.slotY)
+  const path = flyerPath(seat.x, seat.y, dir, wa)
+
+  const move = (t: number) => {
+    if (!flyerWin || flyerWin.isDestroyed() || token !== flyerToken) return
+    const point = flyerPoint(t, path.start.x, path.start.y, path.dest.x, path.dest.y)
+    flyerWin.setPosition(Math.round(point.x), Math.round(point.y), false)
+  }
+
+  const reveal = () => {
+    if (!flyerWin || flyerWin.isDestroyed() || token !== flyerToken) return
+    flyerWin.webContents.send('show-flyer', {
+      id: payload.id,
+      species: payload.species,
+      colors: payload.colors,
+      gears: payload.gears ?? [],
+      pose: payload.pose || 'peek',
+      slotX: payload.slotX,
+      slotY: payload.slotY,
+      dir: path.dir,
+      duration,
+    })
+    flyerWin.setBackgroundColor('#00000000')
+    flyerWin.setBounds({
+      x: Math.round(path.start.x),
+      y: Math.round(path.start.y),
+      width: FLYER_SIZE,
+      height: FLYER_SIZE,
+    })
+    flyerWin.showInactive()
+    pinOnTop(flyerWin)
+    const started = Date.now()
+    flyerTimer = setInterval(() => {
+      if (token !== flyerToken || !flyerWin || flyerWin.isDestroyed()) {
+        if (flyerTimer) clearInterval(flyerTimer)
+        flyerTimer = null
+        return
+      }
+      const t = (Date.now() - started) / duration
+      if (t >= 1) {
+        if (flyerTimer) clearInterval(flyerTimer)
+        flyerTimer = null
+        flyerWin.hide()
+        return
+      }
+      move(t)
+    }, 16)
+  }
+
+  const url = flyerWin.webContents.getURL()
+  if (url.includes('#flyer')) {
+    reveal()
+    return
+  }
+  flyerWin.webContents.once('did-finish-load', reveal)
+  loadPage(flyerWin, 'flyer')
 }
 
 function placeBubble() {
@@ -240,10 +374,11 @@ function ensureBubbleWindow() {
   })
 }
 
-function showBubble(payload: PushBubble) {
+function showBubble(payload: PushBubble, asPose = false, holdMs?: number) {
   ensureBubbleWindow()
   if (!bubbleWin) return
   bubblePayload = payload
+  poseBubble = asPose
   if (bubbleTimer) clearTimeout(bubbleTimer)
   const reveal = () => {
     if (!bubbleWin || bubblePayload !== payload) return
@@ -256,7 +391,7 @@ function showBubble(payload: PushBubble) {
     bubbleWin.webContents.once('did-finish-load', reveal)
     loadPage(bubbleWin, 'bubble')
   }
-  bubbleTimer = setTimeout(() => hideBubble(), payload.url ? 16000 : 8000)
+  bubbleTimer = setTimeout(() => hideBubble(), holdMs ?? (payload.url ? 16000 : 8000))
 }
 
 function openExternalQuiet(url: string) {
@@ -395,6 +530,9 @@ function bindRoomClient() {
   let lastNotice = ''
   let lastGathering: boolean | null = null
   let lastSchoolPlace: string | null = null
+  roomClient.onPoses = (payload) => {
+    if (worldWin && !worldWin.isDestroyed()) worldWin.webContents.send('room-poses', payload)
+  }
   roomClient.onChange = () => {
     const view = roomClient.get()
     win?.webContents.send('room-state', view)
@@ -415,6 +553,9 @@ function bindRoomClient() {
     const gathering = isHomeGathering(view.you, view.homePeople, store.get().clientId)
     if (lastGathering !== gathering) {
       lastGathering = gathering
+      if (gathering && poseBubble) hideBubble()
+      if (gathering) warmupFlyer()
+      else hideFlyer()
       if (win && !win.isDestroyed()) win.setFocusable(gathering)
     }
     const schoolId = view.you?.schoolPlaceId ?? null
@@ -428,13 +569,12 @@ function bindRoomClient() {
       lastSchoolPlace = null
     }
     if (gathering) {
-      const n = Math.max(1, 1 + view.homePeople.length)
-      const cols = Math.min(n, 5)
-      const rows = Math.ceil(n / 5)
-      const minW = Math.max(148, cols * 64 + 58)
-      const minH = Math.max(148, rows * 90 + 48)
-      if (petLayout.width < minW || petLayout.height < minH) {
-        petLayout = { width: Math.max(petLayout.width, minW), height: Math.max(petLayout.height, minH) }
+      const min = yardMetrics(Math.max(1, 1 + view.homePeople.length), false)
+      if (petLayout.width < min.width || petLayout.height < min.height) {
+        petLayout = {
+          width: Math.max(petLayout.width, min.width),
+          height: Math.max(petLayout.height, min.height),
+        }
         placeWindow()
       }
       return
@@ -751,25 +891,27 @@ function playDemoAction(id: string) {
   const action = findDemoAction(id)
   const line = action?.lines?.length ? pickLine(action.lines) : ''
   if (!line) return
+  const view = roomClient.get()
+  if (isHomeGathering(view.you, view.homePeople, store.get().clientId)) return
   const payload = { kind: 'weather', text: line }
   sendUi('push-bubble', payload)
-  showBubble(payload)
+  showBubble(payload, true, ACTION_HOLD_MS)
 }
 
-function testActionMenu(): MenuItemConstructorOptions {
+function actionMenu(): MenuItemConstructorOptions {
   const items = (group: 'pose' | 'weather' | 'slack') =>
     DEMO_ACTIONS.filter((item) => item.group === group).map((item) => ({
       label: item.group === 'weather' ? `${item.weather.emoji} ${item.label}` : item.label,
       click: () => playDemoAction(item.id),
     }))
   return {
-    label: '测试动作',
+    label: '动作',
     submenu: [
       { label: '待机动作', submenu: items('pose') },
       { label: '摸鱼', submenu: items('slack') },
       { label: '天气装扮', submenu: items('weather') },
       { type: 'separator' },
-      { label: '恢复正常', click: () => playDemoAction('off') },
+      { label: '恢复待机', click: () => playDemoAction('off') },
     ],
   }
 }
@@ -793,7 +935,7 @@ function popupPetMenu() {
     { label: '现在看看新闻', click: () => void pushOnce('news') },
     { label: '设置', click: () => showPanel('settings') },
     { type: 'separator' },
-    testActionMenu(),
+    actionMenu(),
     { type: 'separator' },
     { label: '退出', click: () => app.quit() },
   ])
@@ -929,7 +1071,7 @@ function createTray() {
     { label: '现在看看新闻', click: () => void pushOnce('news') },
     { label: '设置', click: () => showPanel('settings') },
     { type: 'separator' },
-    testActionMenu(),
+    actionMenu(),
     { type: 'separator' },
     { label: '退出', click: () => app.quit() },
   ])
@@ -942,6 +1084,7 @@ function toggleWindow() {
   if (win.isVisible()) {
     hidePanel()
     hideBubble()
+    hideFlyer()
     win.hide()
   } else {
     win.showInactive()
@@ -1075,14 +1218,19 @@ function registerIpc() {
   ipcMain.on('pet-layout', (_event, size: { width: number; height: number }) => {
     if (!size || typeof size.width !== 'number' || typeof size.height !== 'number') return
     const gathering = isHomeGathering(roomClient.get().you, roomClient.get().homePeople, store.get().clientId)
+    const floor = gathering ? yardMetrics(Math.max(1, 1 + roomClient.get().homePeople.length), false) : { width: 80, height: 108 }
     const next = {
-      width: Math.max(gathering ? 148 : 80, Math.min(800, Math.round(size.width))),
-      height: Math.max(gathering ? 148 : 108, Math.min(560, Math.round(size.height))),
+      width: Math.max(floor.width, Math.min(800, Math.round(size.width))),
+      height: Math.max(floor.height, Math.min(560, Math.round(size.height))),
     }
     if (next.width === petLayout.width && next.height === petLayout.height) return
     petLayout = next
     placeWindow()
   })
+  ipcMain.on('play-flyer', (_event, payload: FlyerPlay) => {
+    playFlyer(payload)
+  })
+  ipcMain.on('hide-flyer', () => hideFlyer())
 
   ipcMain.on('set-ignore-mouse', (_event, ignore: boolean) => {
     applyIgnoreMouse(ignore)
@@ -1119,7 +1267,9 @@ function registerIpc() {
     if (typeof text !== 'string') return
     const line = text.replace(/\s+/g, ' ').trim().slice(0, 80)
     if (!line) return
-    showBubble({ kind: 'info', text: line })
+    const view = roomClient.get()
+    if (isHomeGathering(view.you, view.homePeople, store.get().clientId)) return
+    showBubble({ kind: 'info', text: line }, true)
   })
   ipcMain.on('bubble-size', (_event, size: { width: number; height: number }) => {
     if (!bubbleWin || !bubblePayload) return
@@ -1161,6 +1311,7 @@ app.whenReady().then(() => {
 
 app.on('before-quit', () => {
   quitting = true
+  hideFlyer()
   if (weatherTimer) clearInterval(weatherTimer)
   stopPetSense()
   roomClient.disconnect()

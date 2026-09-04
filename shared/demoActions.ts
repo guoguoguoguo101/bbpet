@@ -3,6 +3,8 @@ import { POSE_LINES, WEATHER_LINES } from './weatherLines'
 
 export type DemoGroup = 'pose' | 'weather' | 'slack'
 
+export const ACTION_HOLD_MS = 10000
+
 export const SLACK_POSES = ['phone', 'snack', 'peek', 'game', 'coffee', 'toilet'] as const
 
 export function isSlackPose(pose: PetPose) {

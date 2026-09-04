@@ -9,12 +9,14 @@ import {
   type HomePlaceId,
   type PetDress,
   type PlaceId,
+  type PoseItem,
   type Presence,
   type RoomView,
   type SchoolPlaceId,
   type ServerMsg,
   type WorldSnapshot,
 } from '../shared/world'
+import { applyPoseItems } from '../shared/sync'
 
 export class RoomClient {
   private ws: WebSocket | null = null
@@ -30,6 +32,7 @@ export class RoomClient {
   private retryTimer: NodeJS.Timeout | null = null
   private noticeTimer: NodeJS.Timeout | null = null
   onChange: (view: RoomView) => void = () => {}
+  onPoses: (payload: { placeId: PlaceId; t: number; items: PoseItem[] }) => void = () => {}
 
   get(): RoomView {
     return this.view
@@ -92,6 +95,14 @@ export class RoomClient {
     this.emit()
   }
 
+  private patchPoses(placeId: PlaceId, t: number, items: PoseItem[]) {
+    this.view = {
+      ...this.view,
+      people: applyPoseItems(this.view.people, items, this.clientId),
+    }
+    this.onPoses({ placeId, t, items })
+  }
+
   private emit() {
     this.onChange(this.view)
   }
@@ -113,6 +124,10 @@ export class RoomClient {
         poses: {
           ...this.view.poses,
           ...posesFrom(this.view.you, snapshot.people),
+        },
+        looks: {
+          ...this.view.looks,
+          ...looksFrom(this.view.you, snapshot.people),
         },
         dresses: {
           ...this.view.dresses,
@@ -234,6 +249,7 @@ export class RoomClient {
         lastChat: null,
         lastHomeChat: null,
         poses: posesFrom(msg.you, msg.home.people),
+        looks: looksFrom(msg.you, msg.home.people),
         dresses: dressesFrom(msg.you, msg.home.people),
         lastEmote: null,
         game: msg.game ?? null,
@@ -265,6 +281,7 @@ export class RoomClient {
           ...this.view,
           homePeople: [...this.view.homePeople.filter((item) => item.clientId !== person.clientId), person],
           poses: { ...this.view.poses, [person.clientId]: person.pose || 'idle' },
+          looks: { ...this.view.looks, [person.clientId]: lookOf(person) },
           dresses: { ...this.view.dresses, [person.clientId]: person.dress || { gear: [], fx: [] } },
         }
       }
@@ -280,13 +297,16 @@ export class RoomClient {
     if (msg.type === 'leave') {
       if (isHomePlace(msg.placeId)) {
         const poses = { ...this.view.poses }
+        const looks = { ...this.view.looks }
         const dresses = { ...this.view.dresses }
         delete poses[msg.clientId]
+        delete looks[msg.clientId]
         delete dresses[msg.clientId]
         this.view = {
           ...this.view,
           homePeople: this.view.homePeople.filter((item) => item.clientId !== msg.clientId),
           poses,
+          looks,
           dresses,
         }
       }
@@ -297,13 +317,13 @@ export class RoomClient {
       return
     }
     if (msg.type === 'move') {
-      this.view = {
-        ...this.view,
-        people: this.view.people.map((item) =>
-          item.clientId === msg.clientId ? { ...item, x: msg.x, y: msg.y, facing: msg.facing } : item,
-        ),
-      }
-      this.emit()
+      this.patchPoses(this.view.you?.schoolPlaceId ?? 'school:campus', Date.now(), [
+        { id: msg.clientId, x: msg.x, y: msg.y, facing: msg.facing },
+      ])
+      return
+    }
+    if (msg.type === 'poses') {
+      this.patchPoses(msg.placeId, msg.t, msg.items)
       return
     }
     if (msg.type === 'chat') {
@@ -324,13 +344,19 @@ export class RoomClient {
     }
     if (msg.type === 'pose') {
       const poses = { ...this.view.poses, [msg.clientId]: msg.pose }
-      const you = this.view.you?.clientId === msg.clientId && this.view.you ? { ...this.view.you, pose: msg.pose } : this.view.you
+      const looks = { ...this.view.looks, [msg.clientId]: { x: msg.lookX || 0, y: msg.lookY || 0 } }
+      const you = this.view.you?.clientId === msg.clientId && this.view.you ? { ...this.view.you, pose: msg.pose, lookX: msg.lookX || 0, lookY: msg.lookY || 0 } : this.view.you
       this.view = {
         ...this.view,
         you,
         poses,
-        homePeople: this.view.homePeople.map((item) => (item.clientId === msg.clientId ? { ...item, pose: msg.pose } : item)),
-        people: this.view.people.map((item) => (item.clientId === msg.clientId ? { ...item, pose: msg.pose } : item)),
+        looks,
+        homePeople: this.view.homePeople.map((item) =>
+          item.clientId === msg.clientId ? { ...item, pose: msg.pose, lookX: msg.lookX || 0, lookY: msg.lookY || 0 } : item,
+        ),
+        people: this.view.people.map((item) =>
+          item.clientId === msg.clientId ? { ...item, pose: msg.pose, lookX: msg.lookX || 0, lookY: msg.lookY || 0 } : item,
+        ),
       }
       this.emit()
       return
@@ -360,6 +386,17 @@ function posesFrom(you: Presence | null, people: Presence[]) {
   if (you) poses[you.clientId] = you.pose || 'idle'
   for (const person of people) poses[person.clientId] = person.pose || 'idle'
   return poses
+}
+
+function lookOf(person: Pick<Presence, 'lookX' | 'lookY'>) {
+  return { x: person.lookX || 0, y: person.lookY || 0 }
+}
+
+function looksFrom(you: Presence | null, people: Presence[]) {
+  const looks: Record<string, { x: number; y: number }> = {}
+  if (you) looks[you.clientId] = lookOf(you)
+  for (const person of people) looks[person.clientId] = lookOf(person)
+  return looks
 }
 
 function dressesFrom(you: Presence | null, people: Presence[]) {
