@@ -1376,6 +1376,7 @@ html.game-host #root {
 .game-board {
   position: relative;
   margin: 16px auto;
+  box-sizing: content-box;
   background: #d7b07a;
   border: 4px solid #3d2c29;
   image-rendering: pixelated;

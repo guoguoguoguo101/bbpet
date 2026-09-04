@@ -86,12 +86,11 @@ export function GomokuApp() {
             {waitingConfirm && <span>等待校长确认...</span>}
             {game.status === 'ended' && game.result && state && <span>{resultCopy(game.result, state.clientId)}</span>}
             <div className="game-bar-actions">
-              {game.status === 'playing' && (
+              {game.status === 'playing' ? (
                 <button type="button" className="ghost" onClick={resign}>
                   认输
                 </button>
-              )}
-              {game.status === 'ended' && (
+              ) : (
                 <button type="button" className="ghost" onClick={() => window.bbpet.closeGame()}>
                   关闭
                 </button>
