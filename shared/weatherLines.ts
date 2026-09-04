@@ -2,6 +2,15 @@ export function pickLine(lines: string[]) {
   return lines[Math.floor(Math.random() * lines.length)] ?? ''
 }
 
+export function lineForPose(pose: string, seed = '') {
+  const lines = POSE_LINES[pose]
+  if (!lines?.length) return ''
+  if (!seed) return pickLine(lines)
+  let n = 0
+  for (let i = 0; i < seed.length; i++) n = (n * 33 + seed.charCodeAt(i)) >>> 0
+  return lines[n % lines.length]
+}
+
 export const POSE_LINES: Record<string, string[]> = {
   idle: ['发会儿呆。', '想事情呢。', '今天也要认真摸鱼。'],
   'look-right': ['右边好像有东西。', '我看那边一下。'],
@@ -16,6 +25,8 @@ export const POSE_LINES: Record<string, string[]> = {
   snack: ['偷偷吃一口。', '抽屉里还有薯片。', '咔嚓，真香。'],
   peek: ['有人来了吗？', '左右看一眼再摸。', '门口没人，继续。'],
   game: ['再打一把就干活。', '这关过不去了。', '输了不算，再来。'],
+  coffee: ['来杯美式续命。', '再抿一口就不困了。', '咖啡香，工作先放放。'],
+  toilet: ['嘘嘘一下马上回来。', '憋不住了，先去方便。', '洗手间见，别偷看。'],
 }
 
 export const WEATHER_LINES = {

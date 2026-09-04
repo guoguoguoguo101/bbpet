@@ -58,7 +58,7 @@ export function HubPanel({
         </button>
         <button type="button" className="hub-btn" onClick={onFriends}>
           <span>好友{incoming > 0 ? `（${incoming}）` : ''}</span>
-          <small>点同学立刻出现在列表，再点名字进他家</small>
+          <small>在家的好友才能进；不在家去不了</small>
         </button>
       </div>
       <footer className="hub-foot">

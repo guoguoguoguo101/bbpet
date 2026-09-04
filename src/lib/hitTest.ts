@@ -15,7 +15,7 @@ export function isPetSolid(clientX: number, clientY: number) {
   const stack = document.elementsFromPoint(clientX, clientY)
   for (const node of stack) {
     if (!(node instanceof HTMLElement)) continue
-    if (node.closest('.panel, .context-menu, .name-plate, .bubble-link, button, input, select, label, .gather-ui')) return true
+    if (node.closest('.panel, .context-menu, .name-plate, .bubble-link, button, input, select, label, .gather-ui, .gather-dock, .gather-react, .gather-slot, .gather-bar, .gather-log')) return true
     if (node instanceof HTMLCanvasElement && node.classList.contains('pixel-pet')) {
       return canvasAlphaAt(node, clientX, clientY) > 16
     }

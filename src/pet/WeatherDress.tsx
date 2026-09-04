@@ -1,5 +1,5 @@
 import { useMemo } from 'react'
-import type { WeatherFx, WeatherInfo } from '../../shared/types'
+import type { WeatherFx, WeatherGear } from '../../shared/types'
 
 function bits(fx: WeatherFx, count: number) {
   return Array.from({ length: count }, (_, i) => ({
@@ -21,7 +21,7 @@ const STARS = [
   { left: 78, top: 20, size: 'sm', delay: 1.15, dur: 1.4 },
 ]
 
-export function WeatherDress({ weather }: { weather: WeatherInfo }) {
+export function WeatherDress({ weather }: { weather: { fx: WeatherFx[]; gear: WeatherGear[]; code?: number } }) {
   const rain = useMemo(() => (weather.fx.includes('rain') ? bits('rain', weather.fx.includes('storm') ? 14 : 9) : []), [weather.fx])
   const snow = useMemo(() => (weather.fx.includes('snow') ? bits('snow', 8) : []), [weather.fx])
   const spark = useMemo(() => (weather.fx.includes('sun') ? bits('sun', 5) : []), [weather.fx])

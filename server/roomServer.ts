@@ -4,6 +4,7 @@ import { WebSocket, WebSocketServer } from 'ws'
 import { DEFAULT_COLORS } from '../shared/types'
 import {
   BOARD_LIMIT,
+  DIRECTED_EMOTES,
   PLACES,
   chatKindFor,
   clampMove,
@@ -12,14 +13,20 @@ import {
   homeOwnerId,
   homePlaceId,
   inPlace,
+  isEmoteKind,
   isHomePlace,
   isPlaceId,
   isSchoolPlace,
+  isSyncPose,
   sanitizeChat,
+  sanitizeDress,
   spawnAfterEnter,
   type ChatLine,
   type ClientMsg,
+  type EmoteKind,
   type FriendCard,
+  type HomeEmote,
+  type PetDress,
   type PlaceId,
   type Presence,
   type ServerMsg,
@@ -31,6 +38,9 @@ interface Client {
   presence: Presence
   lastChatAt: number
   chatBurst: number
+  lastPoseAt: number
+  lastEmoteAt: number
+  lastDressAt: number
 }
 
 export function startRoomServer(port: number, options?: { friendsFile?: string }): Promise<Server> {
@@ -108,6 +118,57 @@ export function startRoomServer(port: number, options?: { friendsFile?: string }
     }
   }
 
+  const resolvePlace = (client: Client, placeId?: PlaceId) => {
+    let target: PlaceId | null = placeId && isPlaceId(placeId) && placeId !== 'away' ? placeId : null
+    if (!target) target = client.presence.schoolPlaceId ?? client.presence.homeId
+    if (!inPlace(client.presence, target)) return null
+    return target
+  }
+
+  const emitEmote = (client: Client, kind: EmoteKind, placeId: PlaceId, targetId?: string) => {
+    const emote: HomeEmote = {
+      id: `${Date.now()}-${client.presence.clientId}-${kind}`,
+      fromId: client.presence.clientId,
+      targetId,
+      kind,
+      ts: Date.now(),
+      placeId,
+    }
+    const payload: ServerMsg = { type: 'emote', emote }
+    send(client.ws, payload)
+    broadcast(placeId, payload, client.ws)
+    return emote
+  }
+
+  const sendHome = (guest: Client, reason: string) => {
+    const own = homePlaceId(guest.presence.clientId)
+    if (guest.presence.homeId === own) return
+    const from = guest.presence.homeId
+    broadcast(from, { type: 'leave', clientId: guest.presence.clientId, placeId: from }, guest.ws)
+    guest.presence.homeId = own
+    guest.presence.placeId = displayPlace(guest.presence)
+    guest.presence.pose = 'idle'
+    send(guest.ws, { type: 'snapshot', you: guest.presence, snapshot: snapshot(own, guest.presence.clientId) })
+    send(guest.ws, { type: 'notice', text: reason })
+    broadcast(own, { type: 'join', person: guest.presence, placeId: own }, guest.ws)
+    notifyFriendLists(guest.presence.clientId)
+  }
+
+  const bounceVisitors = (homeId: PlaceId) => {
+    const owner = homeOwnerId(homeId)
+    if (!owner) return
+    for (const guest of [...byId.values()]) {
+      if (guest.presence.clientId === owner) continue
+      if (guest.presence.homeId !== homeId) continue
+      sendHome(guest, '主人不在家了，先回自己家吧')
+    }
+  }
+
+  const hostIsHome = (ownerId: string) => {
+    const host = byId.get(ownerId)
+    return Boolean(host && host.presence.homeId === homePlaceId(ownerId))
+  }
+
   const drop = (ws: WebSocket) => {
     const client = clients.get(ws)
     if (!client) return
@@ -122,6 +183,7 @@ export function startRoomServer(port: number, options?: { friendsFile?: string }
       })
     }
     notifyFriendLists(client.presence.clientId)
+    bounceVisitors(homePlaceId(client.presence.clientId))
   }
 
   wss.on('connection', (ws) => {
@@ -167,10 +229,12 @@ export function startRoomServer(port: number, options?: { friendsFile?: string }
           x: spawn.x,
           y: spawn.y,
           facing: 'r',
+          pose: 'idle',
+          dress: { gear: [], fx: [] },
         }
         friends.upsert(msg.clientId, presence)
         console.log(`[hello] ${presence.name} ${msg.clientId.slice(0, 8)} 上线`)
-        const client: Client = { ws, presence, lastChatAt: 0, chatBurst: 0 }
+        const client: Client = { ws, presence, lastChatAt: 0, chatBurst: 0, lastPoseAt: 0, lastEmoteAt: 0, lastDressAt: 0 }
         clients.set(ws, client)
         byId.set(msg.clientId, client)
         send(ws, {
@@ -181,6 +245,7 @@ export function startRoomServer(port: number, options?: { friendsFile?: string }
         })
         broadcast(homeId, { type: 'join', person: presence, placeId: homeId }, ws)
         notifyFriendLists(msg.clientId)
+        if (peopleIn(homeId).length >= 2) emitEmote(client, 'wave', homeId)
         return
       }
 
@@ -200,20 +265,22 @@ export function startRoomServer(port: number, options?: { friendsFile?: string }
             send(ws, { type: 'error', message: '还不是好友，先加好友再串门' })
             return
           }
+          if (owner && owner !== client.presence.clientId && !hostIsHome(owner)) {
+            send(ws, { type: 'notice', text: '好友不在家，现在去不了' })
+            return
+          }
           if (to === client.presence.homeId) return
           const from = client.presence.homeId
+          const leavingOwn = from === homePlaceId(client.presence.clientId)
           broadcast(from, { type: 'leave', clientId: client.presence.clientId, placeId: from }, ws)
           client.presence.homeId = to
           client.presence.placeId = displayPlace(client.presence)
+          client.presence.pose = 'idle'
           send(ws, { type: 'snapshot', you: client.presence, snapshot: snapshot(to, client.presence.clientId) })
           broadcast(to, { type: 'join', person: client.presence, placeId: to }, ws)
           notifyFriendLists(client.presence.clientId)
-          if (owner && owner !== client.presence.clientId) {
-            const host = byId.get(owner)
-            if (host && host.presence.homeId !== to) {
-              send(host.ws, { type: 'notice', text: `${client.presence.name} 来你家了，回家就能在桌面上看见` })
-            }
-          }
+          if (leavingOwn) bounceVisitors(from)
+          if (peopleIn(to).length >= 2) emitEmote(client, 'wave', to)
           return
         }
 
@@ -282,6 +349,76 @@ export function startRoomServer(port: number, options?: { friendsFile?: string }
         }
         send(ws, { type: 'chat', line })
         broadcast(target, { type: 'chat', line }, ws)
+        return
+      }
+
+      if (msg.type === 'pose') {
+        if (!isSyncPose(msg.pose)) return
+        const place = resolvePlace(client, msg.placeId)
+        if (!place) return
+        const now = Date.now()
+        if (now - client.lastPoseAt < 400) return
+        client.lastPoseAt = now
+        client.presence.pose = msg.pose
+        const payload: ServerMsg = {
+          type: 'pose',
+          clientId: client.presence.clientId,
+          pose: msg.pose,
+          placeId: place,
+        }
+        send(ws, payload)
+        broadcast(place, payload, ws)
+        return
+      }
+
+      if (msg.type === 'dress') {
+        const place = resolvePlace(client, msg.placeId)
+        if (!place) return
+        const now = Date.now()
+        if (now - client.lastDressAt < 400) return
+        client.lastDressAt = now
+        const dress: PetDress = sanitizeDress(msg.dress)
+        client.presence.dress = dress
+        const payload: ServerMsg = {
+          type: 'dress',
+          clientId: client.presence.clientId,
+          dress,
+          placeId: place,
+        }
+        send(ws, payload)
+        broadcast(place, payload, ws)
+        return
+      }
+
+      if (msg.type === 'emote') {
+        if (!isEmoteKind(msg.kind)) return
+        const place = resolvePlace(client, msg.placeId)
+        if (!place) return
+        const now = Date.now()
+        if (now - client.lastEmoteAt < 5000) {
+          send(ws, { type: 'error', message: '动作还在冷却' })
+          return
+        }
+        const directed = DIRECTED_EMOTES.includes(msg.kind)
+        const targetId = directed ? String(msg.targetId || '') : undefined
+        if (directed) {
+          if (!targetId || targetId === client.presence.clientId) {
+            send(ws, { type: 'error', message: '先点客厅里的人' })
+            return
+          }
+          const other = byId.get(targetId)
+          if (!other || !inPlace(other.presence, place)) {
+            send(ws, { type: 'error', message: '对方不在这间客厅' })
+            return
+          }
+        }
+        client.lastEmoteAt = now
+        if (msg.kind === 'wave') client.presence.pose = 'wave'
+        if (msg.kind === 'wake' && targetId) {
+          const other = byId.get(targetId)
+          if (other?.presence.pose === 'sleep') other.presence.pose = 'wake'
+        }
+        emitEmote(client, msg.kind, place, targetId)
         return
       }
 

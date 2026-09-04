@@ -492,6 +492,62 @@ const SWEAT: Array<[number, number, string]> = [
   [1, 4, 'L'],
 ]
 
+const WAVE: Array<[number, number, string]> = [
+  [13, 1, '#'],
+  [14, 0, '#'],
+  [15, 1, '#'],
+  [13, 2, '#'],
+  [14, 2, 'A'],
+  [15, 2, '#'],
+  [14, 3, 'B'],
+  [13, 3, '#'],
+  [15, 3, '#'],
+  [14, 4, '#'],
+]
+
+const COFFEE: Array<[number, number, string]> = [
+  [12, 6, 'L'],
+  [13, 7, 'L'],
+  [12, 8, 'L'],
+  [10, 11, '#'],
+  [11, 11, '#'],
+  [12, 11, '#'],
+  [9, 12, '#'],
+  [10, 12, 'D'],
+  [11, 12, 'D'],
+  [12, 12, 'D'],
+  [13, 12, '#'],
+  [14, 12, '#'],
+  [9, 13, '#'],
+  [10, 13, 'D'],
+  [11, 13, 'A'],
+  [12, 13, 'D'],
+  [13, 13, '#'],
+  [14, 13, '#'],
+  [10, 14, '#'],
+  [11, 14, '#'],
+  [12, 14, '#'],
+  [13, 14, '#'],
+]
+
+const TOILET: Array<[number, number, string]> = [
+  [12, 5, 'L'],
+  [13, 6, 'L'],
+  [12, 7, 'L'],
+  [1, 11, '#'],
+  [2, 11, 'L'],
+  [3, 11, '#'],
+  [0, 12, '#'],
+  [1, 12, 'L'],
+  [2, 12, 'L'],
+  [3, 12, 'L'],
+  [4, 12, '#'],
+  [1, 13, '#'],
+  [2, 13, 'A'],
+  [3, 13, '#'],
+  [2, 14, '#'],
+]
+
 function speciesPoses(idle: string[], blink: string[], talk: string[]): Record<PetPose, string[]> {
   return {
     idle: normalize(idle),
@@ -505,6 +561,9 @@ function speciesPoses(idle: string[], blink: string[], talk: string[]): Record<P
     snack: overlay(idle, SNACK),
     peek: overlay(idle, SWEAT),
     game: overlay(idle, GAMEPAD),
+    wave: overlay(idle, WAVE),
+    coffee: overlay(idle, COFFEE),
+    toilet: overlay(blink, TOILET),
   }
 }
 

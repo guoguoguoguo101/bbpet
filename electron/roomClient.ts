@@ -1,5 +1,5 @@
 import WebSocket from 'ws'
-import type { PetProfile } from '../shared/types'
+import type { PetPose, PetProfile } from '../shared/types'
 import {
   emptyRoomView,
   homePlaceId,
@@ -7,7 +7,9 @@ import {
   isSchoolPlace,
   type ClientMsg,
   type HomePlaceId,
+  type PetDress,
   type PlaceId,
+  type Presence,
   type RoomView,
   type SchoolPlaceId,
   type ServerMsg,
@@ -102,6 +104,14 @@ export class RoomClient {
         homeBoard: snapshot.board,
         friends: snapshot.friends,
         incoming: snapshot.incoming,
+        poses: {
+          ...this.view.poses,
+          ...posesFrom(this.view.you, snapshot.people),
+        },
+        dresses: {
+          ...this.view.dresses,
+          ...dressesFrom(this.view.you, snapshot.people),
+        },
       }
       return
     }
@@ -217,6 +227,9 @@ export class RoomClient {
         incoming: msg.home.incoming,
         lastChat: null,
         lastHomeChat: null,
+        poses: posesFrom(msg.you, msg.home.people),
+        dresses: dressesFrom(msg.you, msg.home.people),
+        lastEmote: null,
       }
       this.emit()
       this.flush()
@@ -228,6 +241,7 @@ export class RoomClient {
     }
     if (msg.type === 'snapshot') {
       this.view = { ...this.view, you: msg.you, error: '' }
+      if (isHomePlace(msg.snapshot.placeId)) this.homeTarget = msg.you.homeId
       this.applyBucket(msg.snapshot, isHomePlace(msg.snapshot.placeId) ? 'home' : 'school')
       this.emit()
       return
@@ -238,6 +252,8 @@ export class RoomClient {
         this.view = {
           ...this.view,
           homePeople: [...this.view.homePeople.filter((item) => item.clientId !== person.clientId), person],
+          poses: { ...this.view.poses, [person.clientId]: person.pose || 'idle' },
+          dresses: { ...this.view.dresses, [person.clientId]: person.dress || { gear: [], fx: [] } },
         }
       }
       if (isSchoolPlace(msg.placeId) && this.view.you?.schoolPlaceId === msg.placeId) {
@@ -251,7 +267,16 @@ export class RoomClient {
     }
     if (msg.type === 'leave') {
       if (isHomePlace(msg.placeId)) {
-        this.view = { ...this.view, homePeople: this.view.homePeople.filter((item) => item.clientId !== msg.clientId) }
+        const poses = { ...this.view.poses }
+        const dresses = { ...this.view.dresses }
+        delete poses[msg.clientId]
+        delete dresses[msg.clientId]
+        this.view = {
+          ...this.view,
+          homePeople: this.view.homePeople.filter((item) => item.clientId !== msg.clientId),
+          poses,
+          dresses,
+        }
       }
       if (isSchoolPlace(msg.placeId)) {
         this.view = { ...this.view, people: this.view.people.filter((item) => item.clientId !== msg.clientId) }
@@ -283,6 +308,51 @@ export class RoomClient {
     if (msg.type === 'friends') {
       this.view = { ...this.view, friends: msg.friends, incoming: msg.incoming }
       this.emit()
+      return
+    }
+    if (msg.type === 'pose') {
+      const poses = { ...this.view.poses, [msg.clientId]: msg.pose }
+      const you = this.view.you?.clientId === msg.clientId && this.view.you ? { ...this.view.you, pose: msg.pose } : this.view.you
+      this.view = {
+        ...this.view,
+        you,
+        poses,
+        homePeople: this.view.homePeople.map((item) => (item.clientId === msg.clientId ? { ...item, pose: msg.pose } : item)),
+        people: this.view.people.map((item) => (item.clientId === msg.clientId ? { ...item, pose: msg.pose } : item)),
+      }
+      this.emit()
+      return
+    }
+    if (msg.type === 'dress') {
+      const dresses = { ...this.view.dresses, [msg.clientId]: msg.dress }
+      const you = this.view.you?.clientId === msg.clientId && this.view.you ? { ...this.view.you, dress: msg.dress } : this.view.you
+      this.view = {
+        ...this.view,
+        you,
+        dresses,
+        homePeople: this.view.homePeople.map((item) => (item.clientId === msg.clientId ? { ...item, dress: msg.dress } : item)),
+        people: this.view.people.map((item) => (item.clientId === msg.clientId ? { ...item, dress: msg.dress } : item)),
+      }
+      this.emit()
+      return
+    }
+    if (msg.type === 'emote') {
+      this.view = { ...this.view, lastEmote: msg.emote }
+      this.emit()
     }
   }
+}
+
+function posesFrom(you: Presence | null, people: Presence[]) {
+  const poses: Record<string, PetPose> = {}
+  if (you) poses[you.clientId] = you.pose || 'idle'
+  for (const person of people) poses[person.clientId] = person.pose || 'idle'
+  return poses
+}
+
+function dressesFrom(you: Presence | null, people: Presence[]) {
+  const dresses: Record<string, PetDress> = {}
+  if (you) dresses[you.clientId] = you.dress || { gear: [], fx: [] }
+  for (const person of people) dresses[person.clientId] = person.dress || { gear: [], fx: [] }
+  return dresses
 }

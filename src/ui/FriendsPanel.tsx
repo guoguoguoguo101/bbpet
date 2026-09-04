@@ -1,4 +1,4 @@
-import type { FriendCard, RoomView } from '../../shared/world'
+import { homePlaceId, isFriendAtHome, type FriendCard, type RoomView } from '../../shared/world'
 import { PixelPet } from '../pet/PixelPet'
 
 interface FriendsPanelProps {
@@ -13,7 +13,7 @@ export function FriendsPanel({ room, myId, onVisit, onClose }: FriendsPanelProps
     if (!card.online) return '离线'
     const bits: string[] = []
     if (card.schoolPlaceId) bits.push('在学校')
-    if (card.homeId === `home:${card.clientId}`) bits.push('在自己家')
+    if (card.homeId === homePlaceId(card.clientId)) bits.push('在自己家')
     else if (card.homeId) bits.push('在别人家串门')
     return bits.join(' · ') || '在线'
   }
@@ -32,21 +32,24 @@ export function FriendsPanel({ room, myId, onVisit, onClose }: FriendsPanelProps
       <div className="friends-block">
         <h3>好友列表</h3>
         {room.friends.length === 0 && <p className="hint">去学校点别的同学，点「加好友」就会出现在这里。</p>}
-        {room.friends.map((card) => (
-          <div key={card.clientId} className="friend-row">
-            <PixelPet species={card.species} colors={card.colors} pose="idle" pixelSize={2} />
-            <div className="friend-meta">
-              <strong>
-                {card.name}
-                {card.clientId === myId ? '（我）' : ''}
-              </strong>
-              <small className={card.online ? 'online' : ''}>{ownerAt(card)}</small>
+        {room.friends.map((card) => {
+          const atHome = isFriendAtHome(card)
+          return (
+            <div key={card.clientId} className="friend-row">
+              <PixelPet species={card.species} colors={card.colors} pose="idle" pixelSize={2} />
+              <div className="friend-meta">
+                <strong>
+                  {card.name}
+                  {card.clientId === myId ? '（我）' : ''}
+                </strong>
+                <small className={card.online ? 'online' : ''}>{ownerAt(card)}</small>
+              </div>
+              <button type="button" disabled={!atHome} onClick={() => onVisit(card.clientId)}>
+                {atHome ? '进他家' : '不在家'}
+              </button>
             </div>
-            <button type="button" onClick={() => onVisit(card.clientId)}>
-              进他家
-            </button>
-          </div>
-        ))}
+          )
+        })}
       </div>
     </section>
   )

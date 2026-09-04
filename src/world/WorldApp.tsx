@@ -8,11 +8,13 @@ import {
   TILE,
   clampMove,
   dist,
+  isFriendAtHome,
   isSchoolPlace,
   mapSize,
   triggerAt,
   type ChatLine,
   type Facing,
+  type FriendCard,
   type PlaceId,
   type Presence,
   type RoomView,
@@ -64,6 +66,7 @@ export function WorldApp() {
   const [zoom, setZoom] = useState(1.8)
   const [stageSize, setStageSize] = useState({ w: 1, h: 1 })
   const [friendIds, setFriendIds] = useState<string[]>([])
+  const [friends, setFriends] = useState<FriendCard[]>([])
   const [movingOthers, setMovingOthers] = useState<Record<string, number>>({})
   const lastOthersRef = useRef<Record<string, { x: number; y: number }>>({})
   const [inspect, setInspect] = useState<{ clientId: string; name: string; x: number; y: number } | null>(null)
@@ -101,6 +104,7 @@ export function WorldApp() {
       setError(room.error)
       setNotice(room.notice)
       setFriendIds(room.friends.map((item) => item.clientId))
+      setFriends(room.friends)
       if (!room.you) {
         setStatus(room.connecting ? '正在连学校...' : '正在走进校门...')
         return
@@ -335,6 +339,8 @@ export function WorldApp() {
   }
 
   if (!state) return <div className="world-boot">桌宠正在背书包...</div>
+  const inspectCard = inspect ? friends.find((item) => item.clientId === inspect.clientId) : undefined
+  const inspectAtHome = inspectCard ? isFriendAtHome(inspectCard) : false
   if (!isSchoolPlace(placeId)) {
     return <div className="world-boot">正在走进校门...</div>
   }
@@ -457,13 +463,15 @@ export function WorldApp() {
             {friendIds.includes(inspect.clientId) ? (
               <button
                 type="button"
+                disabled={!inspectAtHome}
                 onMouseDown={(event) => {
                   event.stopPropagation()
+                  if (!inspectAtHome) return
                   window.bbpet.goHome(inspect.clientId)
                   setInspect(null)
                 }}
               >
-                去他家
+                {inspectAtHome ? '去他家' : '不在家'}
               </button>
             ) : (
               <button
