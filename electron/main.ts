@@ -49,6 +49,25 @@ let roomHostError = ''
 let leaveWorldNext = false
 let worldResizeTimer: NodeJS.Timeout | null = null
 let petSenseTimer: NodeJS.Timeout | null = null
+
+function pinOnTop(target: BrowserWindow | null | undefined) {
+  if (!target || target.isDestroyed()) return
+  target.setAlwaysOnTop(true, 'screen-saver')
+  if (target.isVisible()) target.moveTop()
+}
+
+function pinDeskPet() {
+  pinOnTop(win)
+  pinOnTop(panelWin)
+  pinOnTop(bubbleWin)
+}
+
+function keepPinned(target: BrowserWindow) {
+  target.on('always-on-top-changed', (_event, isAlwaysOnTop) => {
+    if (quitting || isAlwaysOnTop || !target.isVisible()) return
+    pinOnTop(target)
+  })
+}
 let keyWatch: ChildProcess | null = null
 let typingUntil = 0
 let lastPetPlay = ''
@@ -209,6 +228,8 @@ function ensureBubbleWindow() {
   bubbleWin.setMenuBarVisibility(false)
   bubbleWin.setTitle(' ')
   bubbleWin.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true })
+  keepPinned(bubbleWin)
+  pinOnTop(bubbleWin)
   bubbleWin.on('close', (event) => {
     if (quitting) return
     event.preventDefault()
@@ -240,10 +261,7 @@ function openExternalQuiet(url: string) {
   win?.setAlwaysOnTop(false)
   panelWin?.setAlwaysOnTop(false)
   void shell.openExternal(url).finally(() => {
-    setTimeout(() => {
-      win?.setAlwaysOnTop(true)
-      panelWin?.setAlwaysOnTop(true)
-    }, 600)
+    setTimeout(() => pinDeskPet(), 600)
   })
 }
 
@@ -556,6 +574,7 @@ function revealPanel(kind: PanelKind) {
   panelWin.webContents.send('set-panel', kind)
   panelWin.show()
   panelWin.focus()
+  pinOnTop(panelWin)
   setTimeout(() => {
     if (panelKind !== kind || !panelWin?.isVisible()) return
     allowPanelBlurClose = true
@@ -610,6 +629,8 @@ function ensurePanelWindow() {
   panelWin.setMenuBarVisibility(false)
   panelWin.setTitle(' ')
   panelWin.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true })
+  keepPinned(panelWin)
+  pinOnTop(panelWin)
   panelWin.on('blur', () => {
     if (!allowPanelBlurClose || panelKind === 'wizard') return
     hidePanel()
@@ -864,6 +885,8 @@ function createWindow() {
   win.setMenuBarVisibility(false)
   win.setTitle(' ')
   win.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true })
+  keepPinned(win)
+  pinOnTop(win)
   setupTransparentGuards(win)
   placeWindow('pet')
   win.setIgnoreMouseEvents(true, { forward: true })
@@ -877,6 +900,7 @@ function createWindow() {
       if (!win) return
       win.setBackgroundColor('#00000000')
       win.showInactive()
+      pinOnTop(win)
       clearWindowShape()
       setTimeout(() => {
         void refreshWeather(true).catch(() => undefined)
@@ -916,6 +940,7 @@ function toggleWindow() {
     win.hide()
   } else {
     win.showInactive()
+    pinOnTop(win)
   }
 }
 
@@ -1098,6 +1123,7 @@ function registerIpc() {
     bubbleWin.setSize(bubbleSize.width, bubbleSize.height)
     placeBubble()
     bubbleWin.showInactive()
+    pinOnTop(bubbleWin)
   })
   ipcMain.on('quit-app', () => app.quit())
 }
@@ -1115,6 +1141,7 @@ app.whenReady().then(() => {
     createWindow()
     createTray()
     restartPushTimer()
+    screen.on('display-metrics-changed', () => pinDeskPet())
     void syncRoomHost().then(() => void ensureRoom())
   }
   if (process.platform === 'win32') setTimeout(start, 160)
