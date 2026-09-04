@@ -1,3 +1,4 @@
+import type { Stone } from './gomoku'
 import type { PetColors, PetProfile, Species } from './types'
 
 export const TILE = 32
@@ -96,7 +97,7 @@ export interface GameView {
   status: GameStatus
   black: GamePlayer
   white: GamePlayer
-  board: number[][]
+  board: Stone[][]
   turn: 1 | 2
   deadlineAt: number
   lastMove: { x: number; y: number } | null
