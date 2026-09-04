@@ -1,5 +1,6 @@
+import type { FlyerPlay } from '../shared/homeActions'
 import type { AppSettings, AppState, ChatResult, NewsItem, PanelKind, PetProfile, PushBubble, WeatherInfo, WindowMode, WorldStatus } from '../shared/types'
-import type { ClientMsg, RoomView } from '../shared/world'
+import type { ClientMsg, PlaceId, PoseItem, RoomView } from '../shared/world'
 
 export interface BbPetApi {
   getState: () => Promise<AppState>
@@ -19,6 +20,8 @@ export interface BbPetApi {
   setWindowShape: (rects: { x: number; y: number; w: number; h: number }[]) => void
   resizeWindow: (mode: WindowMode) => void
   reportPetLayout: (size: { width: number; height: number }) => void
+  playFlyer: (payload: FlyerPlay) => void
+  hideFlyer: () => void
   dragStart: () => void
   dragEnd: () => void
   popupPetMenu: () => void
@@ -43,6 +46,8 @@ export interface BbPetApi {
   onPanelClosed: (handler: () => void) => () => void
   onWorldStatus: (handler: (status: WorldStatus) => void) => () => void
   onRoomState: (handler: (view: RoomView) => void) => () => void
+  onRoomPoses: (handler: (payload: { placeId: PlaceId; t: number; items: PoseItem[] }) => void) => () => void
   onPetPlay: (handler: (play: { lookX: number; lookY: number; typing: boolean }) => void) => () => void
   onWeather: (handler: (weather: WeatherInfo) => void) => () => void
+  onShowFlyer: (handler: (payload: FlyerPlay) => void) => () => void
 }

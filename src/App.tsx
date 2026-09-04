@@ -3,14 +3,16 @@ import type { AppState, PanelKind, PetPose, WeatherInfo } from '../shared/types'
 import { emptyRoomView, isHomeGathering, EMPTY_DRESS, type RoomView } from '../shared/world'
 import { isPetSolid } from './lib/hitTest'
 import { collectPetShape } from './lib/petShape'
-import { findDemoAction, isSlackPose, SLACK_POSES } from '../shared/demoActions'
-import { lineForPose } from '../shared/weatherLines'
+import { findDemoAction, isSlackPose, SLACK_POSES, ACTION_HOLD_MS } from '../shared/demoActions'
+import { lineForPose, pickLine } from '../shared/weatherLines'
 import { Gathering } from './pet/Gathering'
 import { PixelPet } from './pet/PixelPet'
 import { WeatherDress } from './pet/WeatherDress'
 import { BubbleApp } from './ui/BubbleApp'
+import { FlyerApp } from './ui/FlyerApp'
 import { PanelApp } from './ui/PanelApp'
 import { GomokuApp } from './game/GomokuApp'
+import { OfferStack } from './ui/OfferStack'
 import { WorldApp } from './world/WorldApp'
 
 function currentHash() {
@@ -31,6 +33,7 @@ export function App() {
   }, [])
 
   if (hash === 'bubble') return <BubbleApp />
+  if (hash === 'flyer') return <FlyerApp />
   if (hash === 'world') return <WorldApp />
   if (hash === 'game') return <GomokuApp />
   if (hash === 'hub' || hash === 'chat' || hash === 'settings' || hash === 'wizard' || hash === 'friends') {
@@ -55,9 +58,11 @@ function PetApp() {
   const [demoing, setDemoing] = useState(false)
   const [demoEmote, setDemoEmote] = useState('')
   const [demoLook, setDemoLook] = useState<{ x: number; y: number } | null>(null)
+  const [actionWeather, setActionWeather] = useState<WeatherInfo | null>(null)
   const [idleLine, setIdleLine] = useState('')
   const [peekLook, setPeekLook] = useState(-1)
   const demoLock = useRef(false)
+  const actionTimer = useRef(0)
   const weatherShowTimer = useRef(0)
   const dragging = useRef(false)
   const pressOrigin = useRef<{ x: number; y: number } | null>(null)
@@ -69,12 +74,11 @@ function PetApp() {
 
   const startWeatherShow = (next: WeatherInfo) => {
     setWeather(next)
-    if (demoLock.current) return
     setWeatherShow(next)
     window.clearTimeout(weatherShowTimer.current)
     weatherShowTimer.current = window.setTimeout(() => {
       setWeatherShow(null)
-      setAwakeToken((n) => n + 1)
+      if (!demoLock.current) setAwakeToken((n) => n + 1)
     }, 30000)
   }
 
@@ -114,36 +118,41 @@ function PetApp() {
   }, [])
 
   useEffect(() => {
-    const stopDemo = () => {
+    const stopAction = () => {
       demoLock.current = false
+      window.clearTimeout(actionTimer.current)
       setDemoing(false)
       setDemoEmote('')
       setDemoLook(null)
-      setWeatherShow(null)
+      setActionWeather(null)
       setPose('idle')
       setAwakeToken((n) => n + 1)
     }
 
     const offDemo = window.bbpet.onPlayDemo?.((id) => {
       if (id === 'off') {
-        stopDemo()
+        stopAction()
         return
       }
       const action = findDemoAction(id)
       if (!action) return
       demoLock.current = true
-      window.clearTimeout(weatherShowTimer.current)
-      setWeatherShow(null)
       setDemoing(true)
       setChatOpen(false)
       setTalkingPush(false)
       setUserTyping(false)
       setPose(action.pose)
-      setWeather(action.weather)
+      setActionWeather(action.group === 'weather' ? action.weather : null)
       setDemoEmote(action.emote ?? '')
       setDemoLook(action.look ?? { x: 0, y: 0 })
+      setIdleLine(action.lines.length ? pickLine(action.lines) : '')
+      window.clearTimeout(actionTimer.current)
+      actionTimer.current = window.setTimeout(stopAction, ACTION_HOLD_MS)
     })
-    return () => offDemo?.()
+    return () => {
+      offDemo?.()
+      window.clearTimeout(actionTimer.current)
+    }
   }, [])
 
   useEffect(() => {
@@ -361,34 +370,35 @@ function PetApp() {
   }, [chatOpen, talkingPush, gathering, awakeToken, userTyping, demoing, weatherShow])
 
   useEffect(() => {
-    if (!gathering || demoing) return
+    if (!gathering) return
     if (pose === 'blink') return
-    window.bbpet.roomSend({ type: 'pose', pose, placeId: room.you?.homeId })
-  }, [pose, gathering, demoing, room.you?.homeId])
+    const down = pose === 'drink' || pose === 'type' || pose === 'phone' || pose === 'snack' || pose === 'game' || pose === 'coffee' || pose === 'toilet'
+    const lookX = pose === 'sleep' || pose === 'peek' || down ? 0 : demoLook?.x ?? 0
+    const lookY = pose === 'sleep' || pose === 'peek' ? 0 : down ? 1 : demoLook?.y ?? 0
+    window.bbpet.roomSend({ type: 'pose', pose, lookX, lookY, placeId: room.you?.homeId })
+  }, [pose, gathering, demoLook, room.you?.homeId])
 
   useEffect(() => {
-    if (!gathering || demoing) return
-    const dress = weatherShow ? { gear: weatherShow.gear, fx: weatherShow.fx } : EMPTY_DRESS
+    if (!gathering) return
+    const live = actionWeather ?? weatherShow
+    const dress = live ? { gear: live.gear, fx: live.fx } : EMPTY_DRESS
     window.bbpet.roomSend({ type: 'dress', dress, placeId: room.you?.homeId })
-  }, [gathering, demoing, weatherShow, room.you?.homeId])
+  }, [gathering, actionWeather, weatherShow, room.you?.homeId])
 
   useEffect(() => {
-    if (demoing) {
-      setIdleLine('')
-      return
-    }
+    if (demoing) return
     if (pose === 'idle' || pose === 'blink' || pose === 'talk') {
       setIdleLine('')
       return
     }
-    if (pose === 'drink' && weatherShow?.gear.includes('juice')) {
+    if (pose === 'drink' && weatherShow?.gear.includes('juice') && !actionWeather) {
       setIdleLine('')
       return
     }
     const line = lineForPose(pose)
     setIdleLine(line)
-    if (line) window.bbpet.showLine(line)
-  }, [pose, demoing, weatherShow?.gear.join()])
+    if (line && !gathering) window.bbpet.showLine(line)
+  }, [pose, demoing, gathering, actionWeather, weatherShow?.gear.join()])
 
   useEffect(() => {
     const emote = room.lastEmote
@@ -433,7 +443,7 @@ function PetApp() {
 
     const onDown = (event: PointerEvent) => {
       if (event.button !== 0 || !isPetSolid(event.clientX, event.clientY)) return
-      if (event.target instanceof HTMLElement && event.target.closest('.gather-ui, .gather-dock, .gather-react')) return
+      if (event.target instanceof HTMLElement && event.target.closest('.gather-ui, .gather-dock, .gather-react, .offer-stack')) return
       dragging.current = true
       pressOrigin.current = { x: event.screenX, y: event.screenY }
       setAwakeToken((n) => n + 1)
@@ -470,7 +480,7 @@ function PetApp() {
       pressOrigin.current = null
       if (wasDragging) window.bbpet.dragEnd()
       setIgnore(!isPetSolid(event.clientX, event.clientY), true)
-      if (event.target instanceof HTMLElement && event.target.closest('.gather-ui, .gather-slot, .gather-dock, .gather-react')) return
+      if (event.target instanceof HTMLElement && event.target.closest('.gather-ui, .gather-slot, .gather-dock, .gather-react, .offer-stack')) return
       if (wasDragging && !moved && !cancelled && event.button === 0 && isPetSolid(event.clientX, event.clientY)) {
         window.bbpet.openPanel('hub')
       }
@@ -499,10 +509,10 @@ function PetApp() {
   }, [])
 
   useEffect(() => {
-    if (!state) return
+    if (!state || gathering) return
+    const root = wrapRef.current
+    if (!root) return
     const report = () => {
-      const root = wrapRef.current
-      if (!root) return
       const box = root.getBoundingClientRect()
       window.bbpet.reportPetLayout({
         width: Math.max(64, Math.ceil(box.width)),
@@ -511,15 +521,19 @@ function PetApp() {
       const rects = collectPetShape(root, state.pet.species)
       if (rects.length) window.bbpet.setWindowShape(rects)
     }
+    report()
+    const observer = new ResizeObserver(report)
+    observer.observe(root)
     const id = window.requestAnimationFrame(report)
     const later = window.setTimeout(report, 160)
     return () => {
+      observer.disconnect()
       window.cancelAnimationFrame(id)
       window.clearTimeout(later)
     }
-  }, [state?.pet.species, state?.pet.name, gathering, gathering ? '' : pose, weatherShow?.fx.join(), weatherShow?.gear.join(), weather?.fx.join(), weather?.gear.join(), room.homePeople.length, demoing])
+  }, [state?.pet.species, state?.pet.name, gathering, gathering ? '' : pose, weatherShow?.fx.join(), weatherShow?.gear.join(), actionWeather?.fx.join(), actionWeather?.gear.join(), weather?.fx.join(), weather?.gear.join(), room.homePeople.length, demoing, room.game?.id, room.game?.status])
 
-  const dressWeather = demoing ? weather : weatherShow
+  const dressWeather = actionWeather ?? weatherShow
   const talking = pose === 'talk'
   const glanceSource = demoLook ?? look
   const down = pose === 'drink' || pose === 'type' || pose === 'phone' || pose === 'snack' || pose === 'game' || pose === 'coffee' || pose === 'toilet'
@@ -555,18 +569,20 @@ function PetApp() {
         className={wrapClass}
         onContextMenu={(event) => {
           event.preventDefault()
-          if (event.target instanceof HTMLElement && event.target.closest('.gather-slot:not(.mine), .gather-react')) return
+          if (event.target instanceof HTMLElement && event.target.closest('.gather-slot:not(.mine), .gather-react, .offer-stack')) return
           if (!isPetSolid(event.clientX, event.clientY)) return
           setAwakeToken((n) => n + 1)
           window.bbpet.popupPetMenu()
         }}
       >
-        {gathering && !demoing ? (
+        <OfferStack game={room.game} />
+        {gathering ? (
           <Gathering
             state={state}
             room={room}
             selfPose={pose}
-            selfDress={weatherShow ? { gear: weatherShow.gear, fx: weatherShow.fx } : EMPTY_DRESS}
+            selfDress={dressWeather ? { gear: dressWeather.gear, fx: dressWeather.fx } : EMPTY_DRESS}
+            selfLook={demoLook ?? { x: 0, y: 0 }}
             idleLine={idleLine}
           />
         ) : (
@@ -581,7 +597,7 @@ function PetApp() {
               lookY={glanceY}
               gears={dressWeather?.gear ?? []}
             />
-            {!demoing && <div className="name-plate">{state.pet.name}</div>}
+            <div className="name-plate">{state.pet.name}</div>
           </>
         )}
       </div>

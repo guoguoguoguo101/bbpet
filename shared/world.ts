@@ -8,6 +8,9 @@ export const DEFAULT_ROOM_URL = `ws://127.0.0.1:${DEFAULT_ROOM_PORT}`
 export const BOARD_LIMIT = 80
 export const NEARBY_RANGE = 140
 export const MOVE_SPEED = 110
+export const POSE_TICK_MS = 100
+export const MOVE_SEND_MS = 100
+export const SCHOOL_CROWD_CAP = 100
 
 export type Facing = 'l' | 'r'
 export type PlaceKind = 'campus' | 'classroom'
@@ -52,6 +55,12 @@ export function isSyncPose(value: string): value is PetPose {
   return (SYNC_POSES as string[]).includes(value)
 }
 
+export function clampLook(value: unknown) {
+  const n = Number(value)
+  if (!Number.isFinite(n) || n === 0) return 0
+  return n < 0 ? -1 : 1
+}
+
 export interface PetDress {
   gear: WeatherGear[]
   fx: WeatherFx[]
@@ -82,6 +91,8 @@ export interface Presence {
   y: number
   facing: Facing
   pose: PetPose
+  lookX: number
+  lookY: number
   dress: PetDress
 }
 
@@ -102,6 +113,13 @@ export interface ChatLine {
   ts: number
   kind: ChatKind
   placeId: PlaceId
+}
+
+export interface PoseItem {
+  id: string
+  x: number
+  y: number
+  facing: Facing
 }
 
 export interface PlaceDef {
@@ -139,6 +157,7 @@ export interface RoomView {
   lastChat: ChatLine | null
   lastHomeChat: ChatLine | null
   poses: Record<string, PetPose>
+  looks: Record<string, { x: number; y: number }>
   dresses: Record<string, PetDress>
   lastEmote: HomeEmote | null
   game: GameView | null
@@ -198,7 +217,7 @@ export type ClientMsg =
   | { type: 'friendRequest'; targetId: string }
   | { type: 'friendAccept'; targetId: string }
   | { type: 'friendDecline'; targetId: string }
-  | { type: 'pose'; pose: PetPose; placeId?: PlaceId }
+  | { type: 'pose'; pose: PetPose; lookX?: number; lookY?: number; placeId?: PlaceId }
   | { type: 'dress'; dress: PetDress; placeId?: PlaceId }
   | { type: 'emote'; kind: EmoteKind; targetId?: string; placeId?: PlaceId }
   | { type: 'inviteGame'; targetId: string }
@@ -213,11 +232,12 @@ export type ServerMsg =
   | { type: 'join'; person: Presence; placeId: PlaceId }
   | { type: 'leave'; clientId: string; placeId: PlaceId }
   | { type: 'move'; clientId: string; x: number; y: number; facing: Facing }
+  | { type: 'poses'; placeId: PlaceId; t: number; items: PoseItem[] }
   | { type: 'chat'; line: ChatLine }
   | { type: 'friends'; friends: FriendCard[]; incoming: FriendCard[] }
   | { type: 'notice'; text: string }
   | { type: 'error'; message: string }
-  | { type: 'pose'; clientId: string; pose: PetPose; placeId: PlaceId }
+  | { type: 'pose'; clientId: string; pose: PetPose; lookX?: number; lookY?: number; placeId: PlaceId }
   | { type: 'dress'; clientId: string; dress: PetDress; placeId: PlaceId }
   | { type: 'emote'; emote: HomeEmote }
 
@@ -373,6 +393,7 @@ export function emptyRoomView(): RoomView {
     lastChat: null,
     lastHomeChat: null,
     poses: {},
+    looks: {},
     dresses: {},
     lastEmote: null,
     game: null,

@@ -75,7 +75,7 @@ export function collectPetShape(root: HTMLElement, fallbackSpecies: Species, pix
     const pixel = canvas.width / 16 || pixelSize
     rects.push(...solidRectsFromPet(species, pixel, box.left, box.top))
   }
-  for (const node of root.querySelectorAll<HTMLElement>('.name-plate, .gather-ui, .gather-dock, .gather-react, .gather-bar, .gather-log, .gather-slot, .gather-bubble, .gather-emote, .pet-emote, .wx-umbrella, .wx-snowman, .wx-moon, .wx-star, .wx-juice, .wx-cloud, .demo-caption')) {
+  for (const node of root.querySelectorAll<HTMLElement>('.name-plate, .gather-ui, .gather-dock, .gather-react, .gather-bar, .gather-log, .gather-slot, .gather-bubble, .gather-emote, .pet-emote, .wx-umbrella, .wx-snowman, .wx-moon, .wx-star, .wx-juice, .wx-cloud, .demo-caption, .offer-stack, .offer-card')) {
     rects.push(boxRect(node))
   }
   return rects.filter((rect) => rect.w > 0 && rect.h > 0)

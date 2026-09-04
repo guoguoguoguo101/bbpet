@@ -30,6 +30,15 @@ html.pet-host #root {
   min-height: 0;
 }
 
+html.flyer-host,
+html.flyer-host body,
+html.flyer-host #root {
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  pointer-events: none;
+}
+
 button,
 input,
 select {
@@ -410,16 +419,22 @@ body.bubble-host #root {
   animation: gather-wave 1.6s ease-in-out 1;
 }
 
-.gather-slot.lean-left .pixel-pet {
+.gather-slot.pet-wrap.lean-left {
   animation: gather-lean-left 1.6s ease-in-out 1;
 }
 
-.gather-slot.lean-right .pixel-pet {
+.gather-slot.pet-wrap.lean-right {
   animation: gather-lean-right 1.6s ease-in-out 1;
 }
 
-.gather-slot.emote-kick.to .pixel-pet {
-  animation: gather-kick 1.6s ease-in-out 1;
+.gather-slot.airborne,
+.gather-slot.airborne .pixel-pet,
+.gather-slot.airborne .name-plate,
+.gather-slot.airborne .gather-emote,
+.gather-slot.airborne .gather-bubble {
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
 }
 
 .pet-wrap.weather-wind {
@@ -799,36 +814,252 @@ body.bubble-host #root {
 .pet-wrap.gathering {
   animation: none;
   width: max-content;
+  height: max-content;
   align-items: flex-start;
   cursor: default;
+  overflow: visible;
+}
+
+.offer-stack {
+  position: relative;
+  z-index: 12;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  margin: 2px 0 8px;
+  padding-bottom: 8px;
+  pointer-events: auto;
+  cursor: default;
+}
+
+.pet-wrap.gathering .offer-stack {
+  position: absolute;
+  left: 6px;
+  top: 2px;
+  z-index: 12;
+  margin: 0;
+}
+
+.offer-card {
+  position: relative;
+  box-sizing: border-box;
+  width: max-content;
+  min-width: 148px;
+  max-width: 188px;
+  padding: 10px 12px 8px;
+  border: 3px solid #3d2c29;
+  border-radius: 16px 16px 14px 16px;
+  background: #fff7ea;
+  box-shadow: 3px 3px 0 #ffd6e8;
+  animation: offer-pop 280ms ease-out;
+  overflow: visible;
+}
+
+.offer-card.role-outgoing {
+  background: #fffdf4;
+  box-shadow: 3px 3px 0 #ffe8a3;
+}
+
+.offer-card.kind-visit {
+  box-shadow: 3px 3px 0 #c8f5e4;
+}
+
+.offer-card.kind-rps {
+  box-shadow: 3px 3px 0 #f3c6b8;
+}
+
+.offer-card:last-child::after {
+  content: "";
+  position: absolute;
+  left: 26px;
+  bottom: -9px;
+  width: 12px;
+  height: 12px;
+  border-right: 3px solid #3d2c29;
+  border-bottom: 3px solid #3d2c29;
+  background: inherit;
+  transform: rotate(45deg);
+}
+
+.offer-stamp {
+  position: absolute;
+  top: -9px;
+  right: 8px;
+  padding: 1px 7px;
+  border: 2px solid #3d2c29;
+  border-radius: 999px;
+  background: #c8f5e4;
+  font-size: 10px;
+  line-height: 1.3;
+  transform: rotate(8deg);
+  animation: offer-stamp 1.8s ease-in-out infinite;
+}
+
+.offer-card.role-outgoing .offer-stamp {
+  background: #ffe8a3;
+  animation-name: offer-stamp-out;
+}
+
+.offer-card:not(.kind-gomoku) .offer-stones {
+  display: none;
+}
+
+.offer-glyph {
+  display: inline-block;
+  margin-bottom: 2px;
+  font-size: 14px;
+  line-height: 1;
+}
+
+.offer-stones {
+  display: flex;
+  gap: 4px;
+  margin-bottom: 4px;
+}
+
+.offer-stone {
+  width: 10px;
+  height: 10px;
+  border: 2px solid #3d2c29;
+  border-radius: 50%;
+}
+
+.offer-stone.black {
+  background: #2b211e;
+}
+
+.offer-stone.white {
+  background: #fff8f2;
+}
+
+.offer-title {
+  display: block;
+  font-size: 12px;
+  line-height: 1.3;
+  max-width: 160px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.offer-body {
+  margin: 2px 0 6px;
+  color: #7a5a52;
+  font-size: 11px;
+  line-height: 1.35;
+}
+
+.offer-meter {
+  position: relative;
+  height: 12px;
+  margin-bottom: 6px;
+  border: 2px solid #3d2c29;
+  border-radius: 999px;
+  overflow: hidden;
+  background: #fffdf9;
+}
+
+.offer-meter i {
+  display: block;
+  height: 100%;
+  border-radius: 999px;
+  background: linear-gradient(90deg, #ffb4c8, #ffe8a3 70%);
+  transition: width 180ms linear;
+}
+
+.offer-card.role-outgoing .offer-meter i {
+  background: linear-gradient(90deg, #c8f5e4, #ffe8a3 80%);
+}
+
+.offer-meter span {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 9px;
+  line-height: 1;
+  color: #3d2c29;
+  font-weight: 700;
+}
+
+.offer-actions {
+  display: flex;
+  gap: 4px;
+}
+
+.offer-actions .primary,
+.offer-actions .ghost {
+  padding: 2px 8px;
+  font-size: 11px;
+  line-height: 1.3;
+  border-radius: 999px;
+}
+
+.offer-actions .primary {
+  background: #c8f5e4;
+}
+
+.offer-actions .ghost {
+  background: #fffdf9;
+}
+
+@keyframes offer-pop {
+  from {
+    transform: translateY(6px) scale(0.92);
+    opacity: 0;
+  }
+  to {
+    transform: none;
+    opacity: 1;
+  }
+}
+
+@keyframes offer-stamp {
+  0%,
+  100% {
+    transform: rotate(8deg);
+  }
+  50% {
+    transform: rotate(14deg);
+  }
+}
+
+@keyframes offer-stamp-out {
+  0%,
+  100% {
+    transform: rotate(-6deg);
+  }
+  50% {
+    transform: rotate(-12deg);
+  }
 }
 
 .gather {
   position: relative;
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  width: max-content;
+  display: block;
   min-width: 0;
-  min-height: 148px;
-  height: auto;
-  padding-right: 56px;
+  min-height: 0;
+  padding: 0;
   pointer-events: auto;
   overflow: visible;
 }
 
 .gather-pets {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: flex-start;
-  min-height: 114px;
+  position: absolute;
+  inset: 0;
+  display: block;
+  min-height: 0;
   height: auto;
-  padding: 36px 4px 6px 4px;
+  padding: 0;
 }
 
 .gather-slot {
-  position: relative;
-  width: 64px;
+  position: absolute;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
   border: 0;
   padding: 0;
   margin: 0;
@@ -921,6 +1152,10 @@ body.bubble-host #root {
 }
 
 .gather-bar {
+  position: absolute;
+  left: 8px;
+  bottom: 4px;
+  z-index: 4;
   display: flex;
   align-items: center;
   gap: 4px;
@@ -928,12 +1163,16 @@ body.bubble-host #root {
   height: 28px;
   flex-shrink: 0;
   width: 128px;
-  margin: 0 4px 4px;
+  margin: 0;
   padding: 0 4px;
   border: 2px solid #3d2c29;
   border-radius: 10px;
   background: #fff8f2;
   cursor: default;
+}
+
+.gather-bar.is-chat {
+  width: min(220px, calc(100% - 88px));
 }
 
 .gather-bar .ghost {
@@ -962,11 +1201,15 @@ body.bubble-host #root {
 }
 
 .gather-log {
+  position: absolute;
+  left: 8px;
+  bottom: 36px;
+  z-index: 4;
   box-sizing: border-box;
-  width: 128px;
-  max-width: 128px;
+  width: 160px;
+  max-width: calc(100% - 88px);
   max-height: 72px;
-  margin: 0 4px 4px;
+  margin: 0;
   padding: 4px 6px;
   overflow-y: auto;
   overflow-x: hidden;
@@ -1298,16 +1541,19 @@ button:disabled {
   }
 }
 
-@keyframes gather-kick {
-  0%,
-  100% {
-    transform: translateX(0) rotate(0deg);
-  }
-  30% {
-    transform: translateX(6px) rotate(8deg);
-  }
-  55% {
-    transform: translateX(-4px) rotate(-6deg);
+.flyer-spin {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+  animation: flyer-spin 0.42s linear infinite;
+}
+
+@keyframes flyer-spin {
+  to {
+    transform: rotate(360deg);
   }
 }
 

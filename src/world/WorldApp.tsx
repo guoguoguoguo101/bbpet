@@ -1,6 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import type { AppState } from '../../shared/types'
 import {
+  MOVE_SEND_MS,
   MOVE_SPEED,
   NEARBY_RANGE,
   PET_SIZE,
@@ -19,9 +20,11 @@ import {
   type FriendCard,
   type GameView,
   type PlaceId,
+  type PoseItem,
   type Presence,
   type RoomView,
 } from '../../shared/world'
+import { interpolatePose, keepVisualPeople, poseFacing, roundPose } from '../../shared/sync'
 import { PixelPet } from '../pet/PixelPet'
 import { drawPlace } from './paint'
 
@@ -73,7 +76,16 @@ export function WorldApp() {
   const [game, setGame] = useState<GameView | null>(null)
   const [now, setNow] = useState(() => Date.now())
   const [movingOthers, setMovingOthers] = useState<Record<string, number>>({})
-  const lastOthersRef = useRef<Record<string, { x: number; y: number }>>({})
+  const othersRef = useRef<Presence[]>([])
+  const drawnRef = useRef<Presence[]>([])
+  const motionRef = useRef<
+    Record<
+      string,
+      { fromX: number; fromY: number; toX: number; toY: number; fromFacing: Facing; facing: Facing; fromAt: number }
+    >
+  >({})
+  const walkingRef = useRef(false)
+  const seatedRef = useRef(false)
   const [inspect, setInspect] = useState<{ clientId: string; name: string; x: number; y: number } | null>(null)
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const stageRef = useRef<HTMLDivElement>(null)
@@ -105,6 +117,41 @@ export function WorldApp() {
   }, [])
 
   useEffect(() => {
+    const applyPeople = (people: Presence[], snap: boolean, now = performance.now()) => {
+      const next = snap ? people : keepVisualPeople(othersRef.current, people)
+      if (snap) motionRef.current = {}
+      const stale = new Set(Object.keys(motionRef.current))
+      for (const person of next) {
+        stale.delete(person.clientId)
+        if (snap || !motionRef.current[person.clientId]) {
+          motionRef.current[person.clientId] = {
+            fromX: person.x,
+            fromY: person.y,
+            toX: person.x,
+            toY: person.y,
+            fromFacing: person.facing,
+            facing: person.facing,
+            fromAt: now,
+          }
+        }
+      }
+      for (const id of stale) delete motionRef.current[id]
+      const prevIds = othersRef.current.map((person) => person.clientId).join('|')
+      const nextIds = next.map((person) => person.clientId).join('|')
+      othersRef.current = next
+      if (snap) {
+        drawnRef.current = next
+        setOthers(next)
+        return
+      }
+      if (prevIds !== nextIds) {
+        const drawnBy = new Map(drawnRef.current.map((person) => [person.clientId, person]))
+        const drawn = next.map((person) => drawnBy.get(person.clientId) ?? person)
+        drawnRef.current = drawn
+        setOthers(drawn)
+      }
+    }
+
     const apply = (room: RoomView) => {
       setError(room.error)
       setNotice(room.notice)
@@ -117,25 +164,23 @@ export function WorldApp() {
       }
       const schoolId = room.you.schoolPlaceId
       if (!schoolId) {
+        seatedRef.current = false
         setStatus('正在走进校门...')
         return
       }
-      if (schoolId !== placeRef.current) {
+      const changedPlace = schoolId !== placeRef.current
+      const firstSeat = !seatedRef.current
+      if (changedPlace || firstSeat) {
+        seatedRef.current = true
         ignoreDoorRef.current = performance.now() + 700
         meRef.current = { x: room.you.x, y: room.you.y, facing: room.you.facing }
         setMe(meRef.current)
       }
       setPlaceId(schoolId)
-      const moved: Record<string, number> = {}
-      for (const person of room.people) {
-        const prev = lastOthersRef.current[person.clientId]
-        if (prev && (Math.abs(prev.x - person.x) > 0.4 || Math.abs(prev.y - person.y) > 0.4)) {
-          moved[person.clientId] = Date.now() + 220
-        }
-        lastOthersRef.current[person.clientId] = { x: person.x, y: person.y }
-      }
-      if (Object.keys(moved).length) setMovingOthers((current) => ({ ...current, ...moved }))
-      setOthers(room.people)
+      applyPeople(
+        room.people.filter((person) => person.clientId !== room.you?.clientId),
+        changedPlace || firstSeat,
+      )
       setBoard(room.board)
       setStatus(PLACES[schoolId].title)
       if (room.lastChat && room.lastChat.id !== lastChatIdRef.current) {
@@ -144,8 +189,35 @@ export function WorldApp() {
         setBubbles((current) => ({ ...current, [line.clientId]: { text: line.text, until: Date.now() + 5000 } }))
       }
     }
+
+    const applyPoses = (payload: { placeId: PlaceId; t: number; items: PoseItem[] }) => {
+      if (payload.placeId !== placeRef.current) return
+      const now = performance.now()
+      const byId = new Map(payload.items.map((item) => [item.id, item]))
+      othersRef.current = othersRef.current.map((person) => {
+        const item = byId.get(person.clientId)
+        if (!item) return person
+        const shown = drawnRef.current.find((row) => row.clientId === person.clientId) ?? person
+        motionRef.current[person.clientId] = {
+          fromX: shown.x,
+          fromY: shown.y,
+          toX: item.x,
+          toY: item.y,
+          fromFacing: shown.facing,
+          facing: item.facing,
+          fromAt: now,
+        }
+        return { ...person, x: item.x, y: item.y, facing: item.facing }
+      })
+    }
+
     void window.bbpet.roomState().then(apply)
-    return window.bbpet.onRoomState(apply)
+    const offRoom = window.bbpet.onRoomState(apply)
+    const offPoses = window.bbpet.onRoomPoses(applyPoses)
+    return () => {
+      offRoom()
+      offPoses()
+    }
   }, [])
 
   useEffect(() => {
@@ -249,9 +321,10 @@ export function WorldApp() {
         const facing: Facing = dx < 0 ? 'l' : dx > 0 ? 'r' : meRef.current.facing
         meRef.current = { ...clamped, facing }
         setMe(meRef.current)
-        if (now - lastSendRef.current > 80) {
+        if (now - lastSendRef.current > MOVE_SEND_MS) {
           lastSendRef.current = now
-          window.bbpet.roomSend({ type: 'move', x: clamped.x, y: clamped.y, facing })
+          const pos = roundPose(clamped.x, clamped.y)
+          window.bbpet.roomSend({ type: 'move', x: pos.x, y: pos.y, facing })
         }
         if (now > ignoreDoorRef.current) {
           const trigger = triggerAt(place, clamped.x, clamped.y)
@@ -264,7 +337,45 @@ export function WorldApp() {
             window.bbpet.roomSend({ type: 'enterPlace', placeId: trigger.placeId })
           }
         }
+      } else if (walkingRef.current) {
+        lastSendRef.current = now
+        const pos = roundPose(meRef.current.x, meRef.current.y)
+        window.bbpet.roomSend({ type: 'move', x: pos.x, y: pos.y, facing: meRef.current.facing })
       }
+      walkingRef.current = walking
+
+      const prevDrawn = drawnRef.current
+      const drawn: Presence[] = []
+      const movingNow: Record<string, number> = {}
+      let remoteMoved = false
+      for (const person of othersRef.current) {
+        const motion = motionRef.current[person.clientId]
+        if (!motion) {
+          drawn.push(person)
+          continue
+        }
+        const pos = interpolatePose(motion.fromX, motion.fromY, motion.toX, motion.toY, motion.fromAt, now)
+        if (pos.t < 1) {
+          remoteMoved = true
+          movingNow[person.clientId] = Date.now() + 80
+        }
+        drawn.push({
+          ...person,
+          x: pos.x,
+          y: pos.y,
+          facing: poseFacing(motion.fromFacing, motion.facing, pos.t),
+        })
+      }
+      drawnRef.current = drawn
+      const shifted = drawn.some((person, index) => {
+        const prev = prevDrawn[index]
+        return !prev || prev.clientId !== person.clientId || Math.abs(prev.x - person.x) > 0.2 || Math.abs(prev.y - person.y) > 0.2
+      })
+      if (remoteMoved || shifted) {
+        setOthers(drawn)
+        if (Object.keys(movingNow).length) setMovingOthers((current) => ({ ...current, ...movingNow }))
+      }
+
       setMovingOthers((current) => {
         const next: Record<string, number> = {}
         let changed = false

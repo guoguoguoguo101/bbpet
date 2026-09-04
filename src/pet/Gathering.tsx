@@ -6,46 +6,26 @@ import {
   EMPTY_DRESS,
   homeOwnerId,
   type EmoteKind,
-  type HomeEmote,
   type PetDress,
   type Presence,
   type RoomView,
 } from '../../shared/world'
-import { collectPetShape } from '../lib/petShape'
+import { labelForAction, poseForAction, roleInAction, SLOT_H, SLOT_W, YARD_PAD_TOP, YARD_PAD_X, yardMetrics } from '../../shared/homeActions'
+import { lineForPose } from '../../shared/weatherLines'
+import { useEmotePlayback } from './useEmotePlayback'
 import { PixelPet } from './PixelPet'
 import { WeatherDress } from './WeatherDress'
-import { lineForPose } from '../../shared/weatherLines'
 
 interface GatheringProps {
   state: AppState
   room: RoomView
   selfPose: PetPose
   selfDress: PetDress
+  selfLook: { x: number; y: number }
   idleLine: string
 }
 
-const EMOTE_MS = 1600
 const COOLDOWN_MS = 5000
-
-function emotePose(emote: HomeEmote, clientId: string, resting: PetPose): PetPose | null {
-  if (emote.fromId !== clientId && emote.targetId !== clientId) return null
-  const asTarget = emote.targetId === clientId
-  if (emote.kind === 'wave') return 'wave'
-  if (emote.kind === 'hug') return 'talk'
-  if (emote.kind === 'pour') return 'drink'
-  if (emote.kind === 'wake') return asTarget ? (resting === 'sleep' ? 'wake' : 'wave') : 'wave'
-  if (emote.kind === 'kick') return asTarget ? 'peek' : 'wake'
-  return null
-}
-
-function emoteLabel(emote: HomeEmote, clientId: string) {
-  const asTarget = emote.targetId === clientId
-  if (emote.kind === 'hug') return '抱抱'
-  if (emote.kind === 'pour') return asTarget ? '咕嘟' : '倒水'
-  if (emote.kind === 'wake') return asTarget ? '伸懒腰' : '拍醒'
-  if (emote.kind === 'kick') return asTarget ? '哎呀' : '飞踢'
-  return '挥手'
-}
 
 function poseCaption(pose: PetPose) {
   if (pose === 'sleep') return 'Zzz'
@@ -61,20 +41,41 @@ function poseCaption(pose: PetPose) {
   return ''
 }
 
-export function Gathering({ state, room, selfPose, selfDress, idleLine }: GatheringProps) {
+function guestTalk(pose: PetPose, clientId: string, look: { x: number; y: number }) {
+  if (pose === 'idle' && look.x > 0) return lineForPose('look-right', clientId)
+  if (pose === 'idle' && look.x < 0) return lineForPose('look-left', clientId)
+  return lineForPose(pose, clientId)
+}
+
+export function Gathering({ state, room, selfPose, selfDress, selfLook, idleLine }: GatheringProps) {
   const you = room.you
   const [draft, setDraft] = useState('')
   const [bubbles, setBubbles] = useState<Record<string, { text: string; until: number }>>({})
-  const [playing, setPlaying] = useState<HomeEmote | null>(null)
   const [cooling, setCooling] = useState(false)
   const [chatting, setChatting] = useState(false)
   const [menuFor, setMenuFor] = useState<string | null>(null)
   const [peekLook, setPeekLook] = useState(-1)
   const lastChatIdRef = useRef('')
-  const lastEmoteIdRef = useRef('')
   const coolTimer = useRef(0)
-  const emoteTimer = useRef(0)
   const logRef = useRef<HTMLDivElement>(null)
+  const guests: Presence[] = you ? [you, ...room.homePeople] : []
+  const yard = yardMetrics(Math.max(1, guests.length), chatting)
+
+  const { playing, airborneId } = useEmotePlayback(room.lastEmote, guests, room.dresses, (payload) => {
+    window.bbpet.playFlyer({
+      id: payload.id,
+      species: payload.guest.species,
+      colors: payload.guest.colors,
+      gears: payload.gears,
+      pose: 'peek',
+      slotX: payload.slotX,
+      slotY: payload.slotY,
+      dir: payload.dir,
+      duration: payload.duration,
+    })
+  })
+
+  useEffect(() => () => window.bbpet.hideFlyer(), [])
 
   useEffect(() => {
     const line = room.lastHomeChat
@@ -82,18 +83,6 @@ export function Gathering({ state, room, selfPose, selfDress, idleLine }: Gather
     lastChatIdRef.current = line.id
     setBubbles((current) => ({ ...current, [line.clientId]: { text: line.text, until: Date.now() + 5000 } }))
   }, [room.lastHomeChat?.id])
-
-  useEffect(() => {
-    const emote = room.lastEmote
-    if (!emote) return
-    if (emote.id === lastEmoteIdRef.current) return
-    lastEmoteIdRef.current = emote.id
-    setPlaying(emote)
-    window.clearTimeout(emoteTimer.current)
-    emoteTimer.current = window.setTimeout(() => {
-      setPlaying((current) => (current?.id === emote.id ? null : current))
-    }, EMOTE_MS)
-  }, [room.lastEmote?.id])
 
   useEffect(() => {
     const timer = window.setInterval(() => {
@@ -110,16 +99,14 @@ export function Gathering({ state, room, selfPose, selfDress, idleLine }: Gather
     return () => {
       window.clearInterval(timer)
       window.clearTimeout(coolTimer.current)
-      window.clearTimeout(emoteTimer.current)
     }
   }, [])
 
   useEffect(() => {
     if (!you) return
-    const people = [you, ...room.homePeople]
-    const peeking = people.some((guest) => {
+    const peeking = guests.some((guest) => {
       const resting = guest.clientId === state.clientId ? selfPose : room.poses[guest.clientId] || guest.pose || 'idle'
-      return (playing ? emotePose(playing, guest.clientId, resting) : resting) === 'peek'
+      return poseForAction(playing, guest.clientId, resting) === 'peek'
     })
     if (!peeking) return
     let tick = 0
@@ -129,7 +116,7 @@ export function Gathering({ state, room, selfPose, selfDress, idleLine }: Gather
       setPeekLook(tick % 2 === 0 ? -1 : 1)
     }, 380)
     return () => window.clearInterval(id)
-  }, [you, room.homePeople, room.poses, selfPose, playing, state.clientId])
+  }, [you, guests, room.poses, selfPose, playing, state.clientId])
 
   useEffect(() => {
     if (!chatting) return
@@ -137,25 +124,8 @@ export function Gathering({ state, room, selfPose, selfDress, idleLine }: Gather
   }, [chatting, room.homeBoard.length])
 
   useEffect(() => {
-    const root = document.querySelector('.pet-wrap') as HTMLElement | null
-    if (!root) return
-    const report = () => {
-      const box = root.getBoundingClientRect()
-      window.bbpet.reportPetLayout({
-        width: Math.max(64, Math.ceil(box.width)),
-        height: Math.max(86, Math.ceil(box.height)),
-      })
-      const rects = collectPetShape(root, state.pet.species)
-      if (rects.length) window.bbpet.setWindowShape(rects)
-    }
-    report()
-    const id = window.requestAnimationFrame(report)
-    const later = window.setTimeout(report, 40)
-    return () => {
-      window.cancelAnimationFrame(id)
-      window.clearTimeout(later)
-    }
-  }, [chatting, menuFor, room.homeBoard.length, room.homePeople.length, state.pet.species])
+    window.bbpet.reportPetLayout({ width: yard.width, height: yard.height })
+  }, [yard.width, yard.height])
 
   useEffect(() => {
     if (!menuFor) return
@@ -169,7 +139,6 @@ export function Gathering({ state, room, selfPose, selfDress, idleLine }: Gather
 
   if (!you) return null
 
-  const guests: Presence[] = [you, ...room.homePeople]
   const ownerId = homeOwnerId(you.homeId)
   const owner =
     ownerId === state.clientId
@@ -195,32 +164,36 @@ export function Gathering({ state, room, selfPose, selfDress, idleLine }: Gather
   }
 
   return (
-    <div className="gather">
+    <div className="gather" style={{ width: yard.width, height: yard.height }}>
       <div className="gather-pets">
-        {guests.map((guest) => {
+        {guests.map((guest, index) => {
           const mine = guest.clientId === state.clientId
           const bubble = bubbles[guest.clientId]
           const resting = mine ? selfPose : room.poses[guest.clientId] || guest.pose || 'idle'
-          const acted = playing ? emotePose(playing, guest.clientId, resting) : null
-          const pose = acted || resting
+          const role = roleInAction(playing, guest.clientId)
+          const acted = Boolean(role)
+          const pose = poseForAction(playing, guest.clientId, resting)
           const talking = Boolean(bubble) && !acted
-          const poseTalk = mine ? idleLine : lineForPose(pose, guest.clientId)
-          const caption = playing && acted ? emoteLabel(playing, guest.clientId) : bubble?.text || poseTalk || poseCaption(pose)
           const dress = mine ? selfDress : room.dresses[guest.clientId] || guest.dress || EMPTY_DRESS
           const down = pose === 'drink' || pose === 'type' || pose === 'phone' || pose === 'snack' || pose === 'game' || pose === 'coffee' || pose === 'toilet'
-          const lookX = pose === 'peek' ? peekLook : 0
-          const lookY = pose === 'sleep' || pose === 'peek' ? 0 : down ? 1 : 0
+          const look = mine ? selfLook : room.looks?.[guest.clientId] || { x: guest.lookX || 0, y: guest.lookY || 0 }
+          const poseTalk = mine ? idleLine : guestTalk(pose, guest.clientId, look)
+          const caption = playing && acted ? labelForAction(playing, guest.clientId) : bubble?.text || poseTalk || poseCaption(pose)
+          const lookX = pose === 'peek' ? peekLook : pose === 'sleep' || down ? 0 : look.x
+          const lookY = pose === 'sleep' || pose === 'peek' ? 0 : down ? 1 : look.y
           const fromIndex = playing ? guests.findIndex((item) => item.clientId === playing.fromId) : -1
           const toIndex = playing?.targetId ? guests.findIndex((item) => item.clientId === playing.targetId) : -1
           const towardRight = fromIndex >= 0 && toIndex >= 0 && toIndex > fromIndex
-          const role =
-            playing && guest.clientId === playing.fromId ? 'from' : playing && guest.clientId === playing.targetId ? 'to' : ''
           const openMenu = menuFor === guest.clientId && !mine
+          const hidden = airborneId === guest.clientId
+          const col = index % yard.cols
+          const row = Math.floor(index / yard.cols)
           const slotClass = [
             'gather-slot',
             'pet-wrap',
             talking && 'talking',
             mine && 'mine',
+            hidden && 'airborne',
             openMenu && 'menu-open',
             pose === 'drink' && 'drinking',
             pose === 'sleep' && 'sleeping',
@@ -237,10 +210,10 @@ export function Gathering({ state, room, selfPose, selfDress, idleLine }: Gather
             dress.fx.includes('storm') && 'weather-storm',
             playing && role,
             playing && role && `emote-${playing.kind}`,
-            playing && role && towardRight && role === 'from' && 'lean-right',
-            playing && role && towardRight && role === 'to' && 'lean-left',
-            playing && role && !towardRight && role === 'from' && toIndex >= 0 && 'lean-left',
-            playing && role && !towardRight && role === 'to' && fromIndex >= 0 && 'lean-right',
+            playing && role === 'from' && towardRight && 'lean-right',
+            playing && role === 'from' && !towardRight && toIndex >= 0 && 'lean-left',
+            playing && playing.kind !== 'kick' && role === 'to' && towardRight && !hidden && 'lean-left',
+            playing && playing.kind !== 'kick' && role === 'to' && !towardRight && fromIndex >= 0 && !hidden && 'lean-right',
           ]
             .filter(Boolean)
             .join(' ')
@@ -249,6 +222,7 @@ export function Gathering({ state, room, selfPose, selfDress, idleLine }: Gather
             <div
               key={guest.clientId}
               className={slotClass}
+              style={{ left: YARD_PAD_X + col * SLOT_W, top: YARD_PAD_TOP + row * SLOT_H, width: SLOT_W, height: SLOT_H }}
               title={mine ? undefined : '右键选动作'}
               onContextMenu={(event) => {
                 if (mine) return
@@ -258,7 +232,7 @@ export function Gathering({ state, room, selfPose, selfDress, idleLine }: Gather
               }}
             >
               {(dress.gear.length > 0 || dress.fx.length > 0) && <WeatherDress weather={dress} />}
-              {caption && <div className={acted ? 'gather-emote' : 'gather-bubble'}>{caption}</div>}
+              {caption && !hidden && <div className={acted ? 'gather-emote' : 'gather-bubble'}>{caption}</div>}
               <PixelPet
                 species={guest.species}
                 colors={guest.colors}
@@ -289,11 +263,7 @@ export function Gathering({ state, room, selfPose, selfDress, idleLine }: Gather
       </div>
 
       {chatting && (
-        <div
-          ref={logRef}
-          className="gather-log gather-ui"
-          onWheel={(event) => event.stopPropagation()}
-        >
+        <div ref={logRef} className="gather-log gather-ui" onWheel={(event) => event.stopPropagation()}>
           {room.homeBoard.length === 0 ? (
             <div className="gather-log-empty">还没有说过话</div>
           ) : (
