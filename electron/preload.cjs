@@ -28,6 +28,7 @@ const api = {
   leaveWorld: () => ipcRenderer.send('leave-world'),
   openUrl: (url) => ipcRenderer.send('open-url', url),
   reportBubbleSize: (width, height) => ipcRenderer.send('bubble-size', { width, height }),
+  showLine: (text) => ipcRenderer.send('show-line', text),
   quit: () => ipcRenderer.send('quit-app'),
   onPlayDemo: (handler) => {
     const listener = (_event, id) => handler(id)

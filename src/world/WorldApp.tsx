@@ -114,10 +114,7 @@ export function WorldApp() {
         setStatus('正在走进校门...')
         return
       }
-      const jumped =
-        schoolId !== placeRef.current ||
-        Math.hypot(room.you.x - meRef.current.x, room.you.y - meRef.current.y) > 64
-      if (jumped) {
+      if (schoolId !== placeRef.current) {
         ignoreDoorRef.current = performance.now() + 700
         meRef.current = { x: room.you.x, y: room.you.y, facing: room.you.facing }
         setMe(meRef.current)

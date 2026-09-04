@@ -68,6 +68,7 @@ let dragging = false
 let dragOffsetX = 0
 let dragOffsetY = 0
 let dragTimer: NodeJS.Timeout | null = null
+let dragStartedAt = 0
 let ignoreMouse = true
 let placedOnce = false
 
@@ -113,6 +114,7 @@ function startDrag() {
   const cursor = screen.getCursorScreenPoint()
   const [x, y] = win.getPosition()
   dragging = true
+  dragStartedAt = Date.now()
   dragOffsetX = cursor.x - x
   dragOffsetY = cursor.y - y
   win.setIgnoreMouseEvents(false)
@@ -128,6 +130,7 @@ function startDrag() {
 
 function endDrag() {
   dragging = false
+  dragStartedAt = 0
   if (dragTimer) {
     clearInterval(dragTimer)
     dragTimer = null
@@ -743,7 +746,9 @@ function startPetSense() {
       )
       keyWatch.stdout?.setEncoding('utf8')
       keyWatch.stdout?.on('data', (chunk: string) => {
-        if (String(chunk).includes('1')) noteTyping()
+        const text = String(chunk)
+        if (text.includes('T1')) noteTyping()
+        if (text.includes('L0') && dragging && Date.now() - dragStartedAt > 80) endDrag()
       })
     }
   }
@@ -1012,6 +1017,12 @@ function registerIpc() {
   ipcMain.on('open-url', (_event, url: string) => {
     if (!/^https?:\/\//i.test(url)) return
     openExternalQuiet(url)
+  })
+  ipcMain.on('show-line', (_event, text: string) => {
+    if (typeof text !== 'string') return
+    const line = text.replace(/\s+/g, ' ').trim().slice(0, 80)
+    if (!line) return
+    showBubble({ kind: 'info', text: line })
   })
   ipcMain.on('bubble-size', (_event, size: { width: number; height: number }) => {
     if (!bubbleWin || !bubblePayload) return

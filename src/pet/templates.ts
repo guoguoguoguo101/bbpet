@@ -360,8 +360,57 @@ function padRow(row: string) {
   return (row + '................').slice(0, 16)
 }
 
+function neighborFill(grid: string[][], x: number, y: number) {
+  const dirs = [
+    [1, 0],
+    [-1, 0],
+    [0, 1],
+    [0, -1],
+  ]
+  for (const [dx, dy] of dirs) {
+    if (grid[y + dy]?.[x + dx] === 'A') return 'A'
+  }
+  return 'B'
+}
+
+function fillInteriorHoles(rows: string[]) {
+  const grid = rows.map((row) => padRow(row).split(''))
+  const height = grid.length
+  const width = 16
+  const outside = Array.from({ length: height }, () => Array.from({ length: width }, () => false))
+  const stack: Array<[number, number]> = []
+  const visit = (x: number, y: number) => {
+    if (x < 0 || y < 0 || x >= width || y >= height) return
+    if (outside[y][x] || grid[y][x] !== '.') return
+    outside[y][x] = true
+    stack.push([x, y])
+  }
+  for (let x = 0; x < width; x += 1) {
+    visit(x, 0)
+    visit(x, height - 1)
+  }
+  for (let y = 0; y < height; y += 1) {
+    visit(0, y)
+    visit(width - 1, y)
+  }
+  while (stack.length) {
+    const [x, y] = stack.pop()!
+    visit(x - 1, y)
+    visit(x + 1, y)
+    visit(x, y - 1)
+    visit(x, y + 1)
+  }
+  for (let y = 0; y < height; y += 1) {
+    for (let x = 0; x < width; x += 1) {
+      if (grid[y][x] !== '.' || outside[y][x]) continue
+      grid[y][x] = neighborFill(grid, x, y)
+    }
+  }
+  return grid.map((row) => row.join(''))
+}
+
 function normalize(rows: string[]) {
-  return rows.map(padRow)
+  return fillInteriorHoles(rows.map(padRow))
 }
 
 function overlay(base: string[], stamps: Array<[number, number, string]>) {
@@ -370,7 +419,7 @@ function overlay(base: string[], stamps: Array<[number, number, string]>) {
     if (!grid[y] || grid[y][x] === undefined) continue
     grid[y][x] = ch
   }
-  return grid.map((row) => row.join(''))
+  return fillInteriorHoles(grid.map((row) => row.join('')))
 }
 
 const BOWL: Array<[number, number, string]> = [

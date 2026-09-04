@@ -29,6 +29,7 @@ export interface BbPetApi {
   leaveWorld: () => void
   openUrl: (url: string) => void
   reportBubbleSize: (width: number, height: number) => void
+  showLine: (text: string) => void
   quit: () => void
   onPlayDemo: (handler: (id: string) => void) => () => void
   onPush: (handler: (payload: PushBubble) => void) => () => void

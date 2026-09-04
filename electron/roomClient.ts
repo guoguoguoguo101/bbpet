@@ -52,6 +52,12 @@ export class RoomClient {
       this.pending.push(msg)
       return
     }
+    if (msg.type === 'move' && this.view.you) {
+      this.view = {
+        ...this.view,
+        you: { ...this.view.you, x: msg.x, y: msg.y, facing: msg.facing },
+      }
+    }
     if (this.ws?.readyState === WebSocket.OPEN) this.ws.send(JSON.stringify(msg))
   }
 

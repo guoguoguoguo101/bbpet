@@ -49,6 +49,7 @@ function PetApp() {
   const [weatherShow, setWeatherShow] = useState<WeatherInfo | null>(null)
   const [chatOpen, setChatOpen] = useState(false)
   const [talkingPush, setTalkingPush] = useState(false)
+  const talkingPushRef = useRef(false)
   const [demoing, setDemoing] = useState(false)
   const [demoEmote, setDemoEmote] = useState('')
   const [demoLook, setDemoLook] = useState<{ x: number; y: number } | null>(null)
@@ -62,6 +63,7 @@ function PetApp() {
   const wrapRef = useRef<HTMLDivElement>(null)
   const gathering = Boolean(state && isHomeGathering(room.you, room.homePeople, state.clientId))
   poseRef.current = pose
+  talkingPushRef.current = talkingPush
 
   const startWeatherShow = (next: WeatherInfo) => {
     setWeather(next)
@@ -155,9 +157,10 @@ function PetApp() {
     const offSettings = window.bbpet.onOpenSettings(() => window.bbpet.openPanel('settings'))
     const offClosed = window.bbpet.onPanelClosed(() => setChatOpen(false))
     const offBubble = window.bbpet.onBubbleClosed(() => {
+      const wasTalking = talkingPushRef.current
       setTalkingPush(false)
       if (demoLock.current) return
-      if (!chatOpen) setPose('idle')
+      if (wasTalking && !chatOpen) setPose('idle')
     })
     return () => {
       offPush()
@@ -380,7 +383,9 @@ function PetApp() {
       setIdleLine('')
       return
     }
-    setIdleLine(lineForPose(pose))
+    const line = lineForPose(pose)
+    setIdleLine(line)
+    if (line) window.bbpet.showLine(line)
   }, [pose, demoing, weatherShow?.gear.join()])
 
   useEffect(() => {
@@ -415,56 +420,79 @@ function PetApp() {
     return () => window.clearInterval(id)
   }, [pose])
 
-  const setIgnore = (ignore: boolean) => {
-    if (lastIgnore.current === ignore) return
+  const setIgnore = (ignore: boolean, force = false) => {
+    if (!force && lastIgnore.current === ignore) return
     lastIgnore.current = ignore
     window.bbpet.setIgnoreMouse(ignore)
   }
 
   useEffect(() => {
+    let missHits = 0
+
     const onDown = (event: PointerEvent) => {
       if (event.button !== 0 || !isPetSolid(event.clientX, event.clientY)) return
       if (event.target instanceof HTMLElement && event.target.closest('.gather-ui, .gather-dock, .gather-react')) return
       dragging.current = true
       pressOrigin.current = { x: event.screenX, y: event.screenY }
       setAwakeToken((n) => n + 1)
-      setIgnore(false)
+      setIgnore(false, true)
+      try {
+        if (event.target instanceof Element) event.target.setPointerCapture(event.pointerId)
+      } catch {
+        // capture is best-effort
+      }
       window.bbpet.dragStart()
     }
 
     const syncHit = (event: PointerEvent) => {
       if (dragging.current) {
+        missHits = 0
         setIgnore(false)
         return
       }
-      setIgnore(!isPetSolid(event.clientX, event.clientY))
+      if (isPetSolid(event.clientX, event.clientY)) {
+        missHits = 0
+        setIgnore(false)
+        return
+      }
+      missHits += 1
+      if (missHits >= 3) setIgnore(true)
     }
 
-    const onUp = (event: PointerEvent) => {
+    const finishDrag = (event: PointerEvent | MouseEvent, cancelled = false) => {
       const origin = pressOrigin.current
       const moved = origin ? Math.abs(event.screenX - origin.x) + Math.abs(event.screenY - origin.y) > 6 : false
       const wasDragging = dragging.current
+      if (cancelled && wasDragging) return
       dragging.current = false
       pressOrigin.current = null
       if (wasDragging) window.bbpet.dragEnd()
-      setIgnore(!isPetSolid(event.clientX, event.clientY))
+      setIgnore(!isPetSolid(event.clientX, event.clientY), true)
       if (event.target instanceof HTMLElement && event.target.closest('.gather-ui, .gather-slot, .gather-dock, .gather-react')) return
-      if (wasDragging && !moved && event.button === 0 && isPetSolid(event.clientX, event.clientY)) {
+      if (wasDragging && !moved && !cancelled && event.button === 0 && isPetSolid(event.clientX, event.clientY)) {
         window.bbpet.openPanel('hub')
       }
     }
 
+    const onUp = (event: PointerEvent | MouseEvent) => finishDrag(event, false)
+    const onCancel = (event: PointerEvent) => finishDrag(event, true)
+
     window.addEventListener('pointermove', syncHit, { capture: true, passive: true })
     window.addEventListener('pointerdown', onDown, { capture: true })
     window.addEventListener('pointerup', onUp, { capture: true })
-    window.addEventListener('pointercancel', onUp, { capture: true })
-    window.addEventListener('blur', () => setIgnore(true))
+    window.addEventListener('pointercancel', onCancel, { capture: true })
+    window.addEventListener('mouseup', onUp, { capture: true })
+    window.addEventListener('blur', () => {
+      if (dragging.current) return
+      setIgnore(true)
+    })
     setIgnore(true)
     return () => {
       window.removeEventListener('pointermove', syncHit, true)
       window.removeEventListener('pointerdown', onDown, true)
       window.removeEventListener('pointerup', onUp, true)
-      window.removeEventListener('pointercancel', onUp, true)
+      window.removeEventListener('pointercancel', onCancel, true)
+      window.removeEventListener('mouseup', onUp, true)
     }
   }, [])
 
@@ -542,11 +570,7 @@ function PetApp() {
         ) : (
           <>
             {dressWeather && <WeatherDress weather={dressWeather} />}
-            {(demoEmote || idleLine) && (
-              <span className="pet-emote">
-                {demoEmote || idleLine}
-              </span>
-            )}
+            {demoEmote && <span className="pet-emote">{demoEmote}</span>}
             <PixelPet
               species={state.pet.species}
               colors={state.pet.colors}
