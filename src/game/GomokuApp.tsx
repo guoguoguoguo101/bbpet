@@ -26,7 +26,9 @@ export function GomokuApp() {
   const [state, setState] = useState<AppState | null>(null)
   const [room, setRoom] = useState<RoomView>(emptyRoomView())
   const [now, setNow] = useState(() => Date.now())
-  const game = room.game
+  const [heldGame, setHeldGame] = useState<GameView | null>(null)
+  const reconnecting = room.connecting || !room.connected
+  const game = room.game ?? (reconnecting ? heldGame : null)
 
   useEffect(() => {
     document.documentElement.classList.add('game-host')
@@ -49,14 +51,20 @@ export function GomokuApp() {
   }, [])
 
   useEffect(() => {
+    if (room.game) setHeldGame(room.game)
+    else if (room.connected && !room.connecting) setHeldGame(null)
+  }, [room.game, room.connected, room.connecting])
+
+  useEffect(() => {
+    setNow(Date.now())
     if (game?.status !== 'playing') return
     const id = window.setInterval(() => setNow(Date.now()), 200)
     return () => window.clearInterval(id)
   }, [game?.id, game?.status])
 
   const seconds = game ? Math.max(0, Math.ceil((game.deadlineAt - now) / 1000)) : 0
-  const canMove = Boolean(game && game.status === 'playing' && myTurn(game) && seconds > 0)
-  const waitingConfirm = Boolean(game && game.status === 'playing' && seconds === 0)
+  const canMove = Boolean(game && !reconnecting && game.status === 'playing' && myTurn(game) && seconds > 0)
+  const waitingConfirm = Boolean(game && !reconnecting && game.status === 'playing' && seconds === 0)
 
   const onBoardClick = (event: MouseEvent<HTMLDivElement>) => {
     if (!game || !canMove) return
@@ -81,22 +89,29 @@ export function GomokuApp() {
           <>
             <strong>{opponent}</strong>
             <span>{game.you === 'black' ? '你执黑' : '你执白'}</span>
-            {game.status === 'playing' && <span>{myTurn(game) ? '轮到你' : '等待对方'}</span>}
-            {game.status === 'playing' && !waitingConfirm && <span>{seconds}s</span>}
-            {waitingConfirm && <span>等待校长确认...</span>}
-            {game.status === 'ended' && game.result && state && <span>{resultCopy(game.result, state.clientId)}</span>}
-            <div className="game-bar-actions">
-              {game.status === 'playing' ? (
-                <button type="button" className="ghost" onClick={resign}>
-                  认输
-                </button>
-              ) : (
-                <button type="button" className="ghost" onClick={() => window.bbpet.closeGame()}>
-                  关闭
-                </button>
-              )}
-            </div>
+            {reconnecting && <span>正在重连</span>}
+            {!reconnecting && game.status === 'playing' && <span>{myTurn(game) ? '轮到你' : '等待对方'}</span>}
+            {!reconnecting && game.status === 'playing' && !waitingConfirm && <span>{seconds}s</span>}
+            {!reconnecting && waitingConfirm && <span>等待校长确认...</span>}
+            {!reconnecting && game.status === 'ended' && game.result && state && (
+              <span>{resultCopy(game.result, state.clientId)}</span>
+            )}
+            {!reconnecting && (
+              <div className="game-bar-actions">
+                {game.status === 'playing' ? (
+                  <button type="button" className="ghost" onClick={resign}>
+                    认输
+                  </button>
+                ) : (
+                  <button type="button" className="ghost" onClick={() => window.bbpet.closeGame()}>
+                    关闭
+                  </button>
+                )}
+              </div>
+            )}
           </>
+        ) : reconnecting ? (
+          <strong>正在重连</strong>
         ) : (
           <>
             <strong>对局已中断</strong>
@@ -110,10 +125,16 @@ export function GomokuApp() {
       </header>
       {!game ? (
         <div className="game-empty">
-          <p>对局已中断</p>
-          <button type="button" className="ghost" onClick={() => window.bbpet.closeGame()}>
-            关闭
-          </button>
+          {reconnecting ? (
+            <p>正在重连</p>
+          ) : (
+            <>
+              <p>对局已中断</p>
+              <button type="button" className="ghost" onClick={() => window.bbpet.closeGame()}>
+                关闭
+              </button>
+            </>
+          )}
         </div>
       ) : (
         <>
@@ -151,8 +172,8 @@ export function GomokuApp() {
               }),
             )}
           </div>
-          {game.status === 'playing' && <p className="game-hint">关闭窗口 = 认输</p>}
-          {game.status === 'ended' && game.result && state && (
+          {!reconnecting && game.status === 'playing' && <p className="game-hint">关闭窗口 = 认输</p>}
+          {!reconnecting && game.status === 'ended' && game.result && state && (
             <p className="game-hint">{resultCopy(game.result, state.clientId)}</p>
           )}
         </>

@@ -64,6 +64,13 @@ export function startRoomServer(port: number, options?: { friendsFile?: string }
       sendGame: (id, game) => {
         const client = byId.get(id)
         if (client) send(client.ws, { type: 'gameState', game })
+        // Defer so end() can forget() before friend cards read isBusy.
+        // Notify once per snapshot (black send) to avoid duplicate fan-out.
+        if (id !== game.black.clientId) return
+        queueMicrotask(() => {
+          notifyFriendLists(game.black.clientId)
+          notifyFriendLists(game.white.clientId)
+        })
       },
       sendError: (id, message) => {
         const client = byId.get(id)
@@ -362,6 +369,7 @@ export function startRoomServer(port: number, options?: { friendsFile?: string }
         const targetId = String(msg.targetId || '')
         friends.decline(client.presence.clientId, targetId)
         sendFriends(client.presence.clientId)
+        return
       }
 
       if (msg.type === 'inviteGame') {

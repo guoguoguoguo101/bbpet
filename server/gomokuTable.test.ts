@@ -186,3 +186,14 @@ test('resign timeout busy disconnect and pending drop', () => {
   assert.equal(pendingDrop.last('a')?.result?.reason, 'expired')
   assert.equal(pendingDrop.last('a')?.result?.winnerId, null)
 })
+
+test('viewFor clones lastMove', () => {
+  const { table, last } = setup()
+  table.invite('a', 'b')
+  table.respond('b', 'g1', true)
+  table.move('a', 'g1', 7, 7)
+  const aView = last('a')
+  assert.ok(aView?.lastMove)
+  aView.lastMove.x = 99
+  assert.equal(last('b')?.lastMove?.x, 7)
+})

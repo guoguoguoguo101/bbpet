@@ -64,7 +64,7 @@ export function createGomokuTable(opts: {
     board: session.board.map((row) => row.slice()),
     turn: session.turn,
     deadlineAt: session.deadlineAt,
-    lastMove: session.lastMove,
+    lastMove: session.lastMove ? { ...session.lastMove } : null,
     winLine: session.winLine ? session.winLine.map((p) => ({ ...p })) : null,
     result: session.result ? { ...session.result } : null,
     you: viewerId === session.black.clientId ? 'black' : 'white',

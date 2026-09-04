@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { SIZE, afterMove, emptyBoard, isFull, place, winLineAt, type Stone } from './gomoku'
 
-function paint(cells: [number, number, Stone][]) {
+function paint(cells: [number, number, 1 | 2][]) {
   let board = emptyBoard()
   for (const [x, y, stone] of cells) {
     const next = place(board, x, y, stone)
