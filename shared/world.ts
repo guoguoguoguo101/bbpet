@@ -55,6 +55,7 @@ export interface FriendCard {
   placeId: PlaceId | null
   homeId: HomePlaceId | null
   schoolPlaceId: SchoolPlaceId | null
+  inGame: boolean
 }
 
 export interface RoomView {
@@ -71,6 +72,53 @@ export interface RoomView {
   notice: string
   lastChat: ChatLine | null
   lastHomeChat: ChatLine | null
+  game: GameView | null
+}
+
+export type GameStatus = 'pending' | 'playing' | 'ended'
+export type GameEndReason = 'five' | 'draw' | 'resign' | 'timeout' | 'disconnect' | 'expired' | 'declined'
+export type GameRole = 'black' | 'white'
+
+export interface GamePlayer {
+  clientId: string
+  name: string
+  species: Species
+  colors: PetColors
+}
+
+export interface GameResult {
+  winnerId: string | null
+  reason: GameEndReason
+}
+
+export interface GameView {
+  id: string
+  status: GameStatus
+  black: GamePlayer
+  white: GamePlayer
+  board: number[][]
+  turn: 1 | 2
+  deadlineAt: number
+  lastMove: { x: number; y: number } | null
+  winLine: { x: number; y: number }[] | null
+  result: GameResult | null
+  you: GameRole
+}
+
+export function isGameBusy(game: GameView | null | undefined) {
+  return Boolean(game && (game.status === 'pending' || game.status === 'playing'))
+}
+
+export function isIncomingInvite(game: GameView | null | undefined) {
+  return Boolean(game && game.status === 'pending' && game.you === 'white')
+}
+
+export function canInviteFriend(
+  game: GameView | null | undefined,
+  myId: string,
+  card: Pick<FriendCard, 'clientId' | 'online' | 'inGame'>,
+) {
+  return card.clientId !== myId && card.online && !card.inGame && !isGameBusy(game)
 }
 
 export type ClientMsg =
@@ -81,9 +129,14 @@ export type ClientMsg =
   | { type: 'friendRequest'; targetId: string }
   | { type: 'friendAccept'; targetId: string }
   | { type: 'friendDecline'; targetId: string }
+  | { type: 'inviteGame'; targetId: string }
+  | { type: 'gameRespond'; gameId: string; accept: boolean }
+  | { type: 'gameMove'; gameId: string; x: number; y: number }
+  | { type: 'gameResign'; gameId: string }
 
 export type ServerMsg =
-  | { type: 'welcome'; you: Presence; home: WorldSnapshot; school: WorldSnapshot | null }
+  | { type: 'welcome'; you: Presence; home: WorldSnapshot; school: WorldSnapshot | null; game?: GameView | null }
+  | { type: 'gameState'; game: GameView }
   | { type: 'snapshot'; you: Presence; snapshot: WorldSnapshot }
   | { type: 'join'; person: Presence; placeId: PlaceId }
   | { type: 'leave'; clientId: string; placeId: PlaceId }
@@ -240,6 +293,7 @@ export function emptyRoomView(): RoomView {
     notice: '',
     lastChat: null,
     lastHomeChat: null,
+    game: null,
   }
 }
 

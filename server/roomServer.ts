@@ -60,6 +60,7 @@ export function startRoomServer(port: number, options?: { friendsFile?: string }
       placeId: online ? displayPlace(online.presence) : null,
       homeId: online?.presence.homeId ?? null,
       schoolPlaceId: online?.presence.schoolPlaceId ?? null,
+      inGame: false,
     }
   }
 
