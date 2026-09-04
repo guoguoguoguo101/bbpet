@@ -1,14 +1,23 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { actionSpec, flyerDir, flyerPath, flyerPoint, flyerSeat, FLYER_SIZE, slotOffset, yardMetrics } from './homeActions'
+import { actionSpec, actionStory, chatLogH, flyerDir, flyerPath, flyerPoint, flyerSeat, FLYER_SIZE, SLOT_H, slotOffset, yardMetrics } from './homeActions'
 
 test('yard size is stable for a given crowd and only grows with people or chat', () => {
   const two = yardMetrics(2, false)
-  const twoChat = yardMetrics(2, true)
+  const twoInput = yardMetrics(2, true, 0)
+  const twoChat = yardMetrics(2, true, 3)
   const three = yardMetrics(3, false)
   assert.equal(two.width, yardMetrics(2, false).width)
+  assert.equal(twoInput.height, two.height)
   assert.ok(twoChat.height > two.height)
   assert.ok(three.width >= two.width)
+})
+
+test('empty chat does not reserve a log band', () => {
+  assert.equal(chatLogH(0), 0)
+  assert.ok(chatLogH(1) > 0)
+  assert.ok(chatLogH(1) < chatLogH(3))
+  assert.equal(chatLogH(3), chatLogH(8))
 })
 
 test('slots stay inside the yard', () => {
@@ -17,8 +26,25 @@ test('slots stay inside the yard', () => {
   for (let i = 0; i < people; i += 1) {
     const slot = slotOffset(i, people)
     assert.ok(slot.x >= 0 && slot.x + 72 <= yard.width)
-    assert.ok(slot.y >= 0 && slot.y + 108 <= yard.height)
+    assert.ok(slot.y >= 0 && slot.y + SLOT_H <= yard.height)
   }
+})
+
+test('bar sits flush under the pet row', () => {
+  const two = yardMetrics(2, false)
+  assert.equal(two.barLeft, 24)
+  assert.equal(two.barW, two.petsW)
+  assert.equal(two.barLeft + two.barW, 24 + 144)
+  const one = yardMetrics(1, false)
+  assert.ok(one.barW >= 144)
+  assert.ok(one.barLeft + one.barW <= one.width)
+})
+
+test('action stories name both pets in a cute line', () => {
+  assert.match(actionStory('kick', '豆豆2', '豆包'), /豆豆2.*豆包/)
+  assert.match(actionStory('hug', '豆豆2', '豆包'), /抱抱/)
+  assert.match(actionStory('pour', '豆豆2', '豆包'), /水/)
+  assert.match(actionStory('wake', '豆豆2', '豆包'), /拍醒/)
 })
 
 test('kick lasts long enough to fly out and back', () => {

@@ -59,7 +59,8 @@ export function Gathering({ state, room, selfPose, selfDress, selfLook, idleLine
   const coolTimer = useRef(0)
   const logRef = useRef<HTMLDivElement>(null)
   const guests: Presence[] = you ? [you, ...room.homePeople] : []
-  const yard = yardMetrics(Math.max(1, guests.length), chatting)
+  const logLines = chatting ? room.homeBoard.length : 0
+  const yard = yardMetrics(Math.max(1, guests.length), chatting, logLines)
 
   const { playing, airborneId } = useEmotePlayback(room.lastEmote, guests, room.dresses, (payload) => {
     window.bbpet.playFlyer({
@@ -262,22 +263,30 @@ export function Gathering({ state, room, selfPose, selfDress, selfLook, idleLine
         })}
       </div>
 
-      {chatting && (
-        <div ref={logRef} className="gather-log gather-ui" onWheel={(event) => event.stopPropagation()}>
-          {room.homeBoard.length === 0 ? (
-            <div className="gather-log-empty">还没有说过话</div>
-          ) : (
-            room.homeBoard.slice(-24).map((line) => (
-              <div key={line.id} className="gather-log-line">
-                <b>{line.name}</b>
-                <span>{line.text}</span>
-              </div>
-            ))
-          )}
+      {chatting && logLines > 0 && (
+        <div
+          ref={logRef}
+          className="gather-log gather-ui"
+          style={{ left: yard.barLeft, width: yard.barW, height: yard.logH }}
+          onWheel={(event) => event.stopPropagation()}
+        >
+          {room.homeBoard.slice(-24).map((line) => (
+            <div key={line.id} className={`gather-log-line${line.action ? ' is-action' : ''}`}>
+              {line.action ? <span>{line.text}</span> : (
+                <>
+                  <b>{line.name}</b>
+                  <span>{line.text}</span>
+                </>
+              )}
+            </div>
+          ))}
         </div>
       )}
 
-      <div className={`gather-bar gather-ui${chatting ? ' is-chat' : ''}`}>
+      <div
+        className={`gather-bar gather-ui${chatting ? ' is-chat' : ''}`}
+        style={{ left: yard.barLeft, width: yard.barW }}
+      >
         {chatting ? (
           <form
             className="gather-chat"

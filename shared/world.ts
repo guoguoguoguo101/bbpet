@@ -113,6 +113,7 @@ export interface ChatLine {
   ts: number
   kind: ChatKind
   placeId: PlaceId
+  action?: EmoteKind
 }
 
 export interface PoseItem {

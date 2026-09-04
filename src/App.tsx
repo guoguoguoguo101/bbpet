@@ -539,26 +539,27 @@ function PetApp() {
   const down = pose === 'drink' || pose === 'type' || pose === 'phone' || pose === 'snack' || pose === 'game' || pose === 'coffee' || pose === 'toilet'
   const glanceX = pose === 'sleep' ? 0 : pose === 'peek' ? peekLook : down ? 0 : glanceSource.x
   const glanceY = pose === 'sleep' ? 0 : pose === 'peek' ? 0 : down ? 1 : glanceSource.y
-  const wrapClass = [
-    'pet-wrap',
-    talking && 'talking',
-    gathering && 'gathering',
-    pose === 'drink' && 'drinking',
-    pose === 'sleep' && 'sleeping',
-    pose === 'wake' && 'waking',
-    pose === 'type' && 'typing',
-    pose === 'phone' && 'phoning',
-    pose === 'snack' && 'snacking',
-    pose === 'peek' && 'peeking',
-    pose === 'game' && 'gaming',
-    pose === 'coffee' && 'coffeeting',
-    pose === 'toilet' && 'toileting',
-    dressWeather?.fx.includes('wind') && 'weather-wind',
-    dressWeather?.fx.includes('storm') && 'weather-storm',
-    dressWeather?.fx.includes('stars') && 'night-sky',
-  ]
-    .filter(Boolean)
-    .join(' ')
+  const wrapClass = gathering
+    ? 'pet-wrap gathering'
+    : [
+        'pet-wrap',
+        talking && 'talking',
+        pose === 'drink' && 'drinking',
+        pose === 'sleep' && 'sleeping',
+        pose === 'wake' && 'waking',
+        pose === 'type' && 'typing',
+        pose === 'phone' && 'phoning',
+        pose === 'snack' && 'snacking',
+        pose === 'peek' && 'peeking',
+        pose === 'game' && 'gaming',
+        pose === 'coffee' && 'coffeeting',
+        pose === 'toilet' && 'toileting',
+        dressWeather?.fx.includes('wind') && 'weather-wind',
+        dressWeather?.fx.includes('storm') && 'weather-storm',
+        dressWeather?.fx.includes('stars') && 'night-sky',
+      ]
+        .filter(Boolean)
+        .join(' ')
 
   if (!state) return <div className="boot">桌宠正在起床...</div>
 

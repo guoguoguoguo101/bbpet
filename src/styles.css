@@ -812,7 +812,8 @@ body.bubble-host #root {
 }
 
 .pet-wrap.gathering {
-  animation: none;
+  animation: none !important;
+  transform: none;
   width: max-content;
   height: max-content;
   align-items: flex-start;
@@ -1044,6 +1045,7 @@ body.bubble-host #root {
   padding: 0;
   pointer-events: auto;
   overflow: visible;
+  transform: none;
 }
 
 .gather-pets {
@@ -1153,26 +1155,27 @@ body.bubble-host #root {
 
 .gather-bar {
   position: absolute;
-  left: 8px;
-  bottom: 4px;
+  left: 24px;
+  bottom: 2px;
   z-index: 4;
   display: flex;
   align-items: center;
   gap: 4px;
   box-sizing: border-box;
-  height: 28px;
+  height: 26px;
   flex-shrink: 0;
-  width: 128px;
+  width: 144px;
   margin: 0;
-  padding: 0 4px;
+  padding: 0 6px;
   border: 2px solid #3d2c29;
   border-radius: 10px;
   background: #fff8f2;
   cursor: default;
+  transform: none;
 }
 
 .gather-bar.is-chat {
-  width: min(220px, calc(100% - 88px));
+  width: 144px;
 }
 
 .gather-bar .ghost {
@@ -1202,26 +1205,22 @@ body.bubble-host #root {
 
 .gather-log {
   position: absolute;
-  left: 8px;
-  bottom: 36px;
+  left: 24px;
+  bottom: 30px;
   z-index: 4;
   box-sizing: border-box;
-  width: 160px;
-  max-width: calc(100% - 88px);
-  max-height: 72px;
+  width: 144px;
+  max-width: none;
+  max-height: 51px;
   margin: 0;
-  padding: 4px 6px;
+  padding: 3px 6px;
   overflow-y: auto;
   overflow-x: hidden;
   border: 2px solid #3d2c29;
-  border-radius: 10px;
+  border-radius: 8px;
   background: #fffdf9;
   pointer-events: auto;
-}
-
-.gather-log-empty {
-  color: #7a5a52;
-  font-size: 10px;
+  transform: none;
 }
 
 .gather-log-line {
@@ -1239,6 +1238,15 @@ body.bubble-host #root {
 .gather-log-line span {
   min-width: 0;
   overflow-wrap: anywhere;
+}
+
+.gather-log-line.is-action {
+  color: #b45a7a;
+}
+
+.gather-log-line.is-action span::before {
+  content: "✧ ";
+  color: #e18aaa;
 }
 
 .gather-chat {

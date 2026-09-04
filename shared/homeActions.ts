@@ -2,12 +2,16 @@ import type { PetColors, PetPose, Species } from './types'
 import type { EmoteKind, HomeEmote } from './world'
 
 export const SLOT_W = 72
-export const SLOT_H = 108
+export const SLOT_H = 94
 export const YARD_PAD_X = 24
 export const YARD_PAD_TOP = 40
 export const MENU_RESERVE = 80
-export const BAR_H = 32
-export const LOG_H = 76
+export const BAR_H = 30
+export const BAR_MIN_W = 144
+export const LOG_LINE = 15
+export const LOG_PAD = 6
+export const LOG_MAX_LINES = 3
+export const LOG_H = LOG_PAD + LOG_MAX_LINES * LOG_LINE
 export const MAX_COLS = 4
 export const FLYER_SIZE = 96
 export const FLYER_OUT = 220
@@ -115,6 +119,17 @@ export function poseForAction(emote: HomeEmote | null, clientId: string, resting
   return role === 'from' ? spec.actorPose : spec.targetPose
 }
 
+export function actionStory(kind: EmoteKind, fromName: string, toName?: string) {
+  const a = fromName.replace(/\s+/g, ' ').trim() || '小伙伴'
+  const b = (toName || '').replace(/\s+/g, ' ').trim()
+  if (kind === 'hug') return `${a} 给 ${b || '大家'} 来了个暖暖抱抱`
+  if (kind === 'pour') return `${a} 给 ${b || '大家'} 续上了一小口水`
+  if (kind === 'wake') return `${a} 把 ${b || '大家'} 从梦里拍醒啦`
+  if (kind === 'kick') return `${a} 把 ${b || '大家'} 一脚踢得转圈飞走啦`
+  if (b) return `${a} 对 ${b} 晃了晃爪子`
+  return `${a} 对客厅挥了挥手`
+}
+
 export function labelForAction(emote: HomeEmote | null, clientId: string): string {
   const role = roleInAction(emote, clientId)
   if (!emote || !role) return ''
@@ -122,15 +137,27 @@ export function labelForAction(emote: HomeEmote | null, clientId: string): strin
   return role === 'from' ? spec.actorLabel : spec.targetLabel
 }
 
-export function yardMetrics(people: number, chatting: boolean) {
+export function chatLogH(lines: number) {
+  const n = Math.max(0, Math.floor(lines))
+  if (n <= 0) return 0
+  return Math.min(LOG_H, LOG_PAD + n * LOG_LINE)
+}
+
+export function yardMetrics(people: number, chatting: boolean, logLines = 0) {
   const n = Math.max(1, people)
   const cols = Math.min(n, MAX_COLS)
   const rows = Math.ceil(n / cols)
+  const petsW = cols * SLOT_W
+  const logH = chatting ? chatLogH(logLines) : 0
   return {
     cols,
     rows,
-    width: YARD_PAD_X + cols * SLOT_W + MENU_RESERVE,
-    height: YARD_PAD_TOP + rows * SLOT_H + BAR_H + (chatting ? LOG_H : 0),
+    petsW,
+    logH,
+    barW: Math.max(BAR_MIN_W, petsW),
+    barLeft: YARD_PAD_X,
+    width: YARD_PAD_X + Math.max(BAR_MIN_W, petsW) + MENU_RESERVE,
+    height: YARD_PAD_TOP + rows * SLOT_H + BAR_H + logH,
   }
 }
 

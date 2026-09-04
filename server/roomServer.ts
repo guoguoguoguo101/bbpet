@@ -37,6 +37,7 @@ import {
 } from '../shared/world'
 import { createFriendsStore } from './friendsStore'
 import { createGomokuTable } from './gomokuTable'
+import { actionStory } from '../shared/homeActions'
 import { clampMoveSpeed, roundPose, schoolHasRoom } from '../shared/sync'
 
 interface Client {
@@ -234,6 +235,25 @@ export function startRoomServer(port: number, options?: { friendsFile?: string }
     const payload: ServerMsg = { type: 'emote', emote }
     send(client.ws, payload)
     broadcast(placeId, payload, client.ws)
+    if (isHomePlace(placeId)) {
+      const other = targetId ? byId.get(targetId) : undefined
+      const line: ChatLine = {
+        id: `${emote.id}-story`,
+        clientId: client.presence.clientId,
+        name: client.presence.name,
+        text: sanitizeChat(actionStory(kind, client.presence.name, other?.presence.name)),
+        ts: emote.ts,
+        kind: 'board',
+        placeId,
+        action: kind,
+      }
+      if (line.text) {
+        boards.set(placeId, [...boardOf(placeId), line].slice(-BOARD_LIMIT))
+        const chat: ServerMsg = { type: 'chat', line }
+        send(client.ws, chat)
+        broadcast(placeId, chat, client.ws)
+      }
+    }
     return emote
   }
 

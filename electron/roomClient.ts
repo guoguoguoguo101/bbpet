@@ -329,7 +329,7 @@ export class RoomClient {
     if (msg.type === 'chat') {
       if (isHomePlace(msg.line.placeId)) {
         const homeBoard = msg.line.kind === 'board' ? [...this.view.homeBoard, msg.line].slice(-80) : this.view.homeBoard
-        this.view = { ...this.view, homeBoard, lastHomeChat: msg.line }
+        this.view = { ...this.view, homeBoard, lastHomeChat: msg.line.action ? this.view.lastHomeChat : msg.line }
       } else {
         const board = msg.line.kind === 'board' ? [...this.view.board, msg.line].slice(-80) : this.view.board
         this.view = { ...this.view, board, lastChat: msg.line }
