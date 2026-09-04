@@ -6,13 +6,17 @@ import {
   PET_SIZE,
   PLACES,
   TILE,
+  canInviteFriend,
   clampMove,
   dist,
+  isIncomingInvite,
   isSchoolPlace,
   mapSize,
   triggerAt,
   type ChatLine,
   type Facing,
+  type FriendCard,
+  type GameView,
   type PlaceId,
   type Presence,
   type RoomView,
@@ -64,6 +68,9 @@ export function WorldApp() {
   const [zoom, setZoom] = useState(1.8)
   const [stageSize, setStageSize] = useState({ w: 1, h: 1 })
   const [friendIds, setFriendIds] = useState<string[]>([])
+  const [friends, setFriends] = useState<FriendCard[]>([])
+  const [game, setGame] = useState<GameView | null>(null)
+  const [now, setNow] = useState(() => Date.now())
   const [movingOthers, setMovingOthers] = useState<Record<string, number>>({})
   const lastOthersRef = useRef<Record<string, { x: number; y: number }>>({})
   const [inspect, setInspect] = useState<{ clientId: string; name: string; x: number; y: number } | null>(null)
@@ -101,6 +108,8 @@ export function WorldApp() {
       setError(room.error)
       setNotice(room.notice)
       setFriendIds(room.friends.map((item) => item.clientId))
+      setFriends(room.friends)
+      setGame(room.game)
       if (!room.you) {
         setStatus(room.connecting ? '正在连学校...' : '正在走进校门...')
         return
@@ -140,6 +149,12 @@ export function WorldApp() {
     void window.bbpet.roomState().then(apply)
     return window.bbpet.onRoomState(apply)
   }, [])
+
+  useEffect(() => {
+    if (!isIncomingInvite(game)) return
+    const id = window.setInterval(() => setNow(Date.now()), 200)
+    return () => window.clearInterval(id)
+  }, [game?.id, game?.status, game?.you])
 
   useEffect(() => {
     const moveKey = (event: KeyboardEvent) => {
@@ -361,6 +376,9 @@ export function WorldApp() {
   const visibleBoard = board.slice(-7)
   const nearbyHint = place.kind === 'classroom' ? '黑板只有本班听得见' : '走近才看得到气泡'
   const hint = error || notice || `WASD 移动 · 点同学加好友${friendIds.length ? ` · 好友 ${friendIds.length}` : ''} · ${nearbyHint}`
+  const incoming = isIncomingInvite(game)
+  const inviteSeconds = game ? Math.max(0, Math.ceil((game.deadlineAt - now) / 1000)) : 0
+  const inspectFriend = inspect ? friends.find((card) => card.clientId === inspect.clientId) : undefined
 
   return (
     <div
@@ -386,6 +404,26 @@ export function WorldApp() {
         <span>{others.length + 1} 人在这里</span>
         <span className="world-zoom">{Math.round(zoom * 100)}%</span>
         <div className="world-bar-actions">
+          {incoming && game && (
+            <>
+              <span className="world-invite">
+                {game.black.name} 邀请你下五子棋 {inviteSeconds}秒
+              </span>
+              <button
+                type="button"
+                onClick={() => window.bbpet.roomSend({ type: 'gameRespond', gameId: game.id, accept: true })}
+              >
+                接受
+              </button>
+              <button
+                type="button"
+                className="ghost"
+                onClick={() => window.bbpet.roomSend({ type: 'gameRespond', gameId: game.id, accept: false })}
+              >
+                拒绝
+              </button>
+            </>
+          )}
           <button type="button" className="ghost" onClick={() => window.bbpet.closeWorld()}>
             收起
           </button>
@@ -455,16 +493,30 @@ export function WorldApp() {
           >
             <strong>{inspect.name}</strong>
             {friendIds.includes(inspect.clientId) ? (
-              <button
-                type="button"
-                onMouseDown={(event) => {
-                  event.stopPropagation()
-                  window.bbpet.goHome(inspect.clientId)
-                  setInspect(null)
-                }}
-              >
-                去他家
-              </button>
+              <>
+                {inspectFriend && canInviteFriend(game, state.clientId, inspectFriend) && (
+                  <button
+                    type="button"
+                    onMouseDown={(event) => {
+                      event.stopPropagation()
+                      window.bbpet.roomSend({ type: 'inviteGame', targetId: inspect.clientId })
+                      setInspect(null)
+                    }}
+                  >
+                    五子棋
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onMouseDown={(event) => {
+                    event.stopPropagation()
+                    window.bbpet.goHome(inspect.clientId)
+                    setInspect(null)
+                  }}
+                >
+                  去他家
+                </button>
+              </>
             ) : (
               <button
                 type="button"

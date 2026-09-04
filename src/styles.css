@@ -805,11 +805,56 @@ body.bubble-host #root {
   font-size: 12px;
 }
 
+.friends-invite {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin: 0 0 8px;
+  padding: 6px 8px;
+  border: 2px solid #3d2c29;
+  border-radius: 10px;
+  background: #ffe8a3;
+  font-size: 12px;
+}
+
+.friends-invite p {
+  margin: 0;
+  flex: 1 1 140px;
+}
+
+.friends-invite button {
+  border: 2px solid #3d2c29;
+  border-radius: 999px;
+  background: #c8f5e4;
+  padding: 4px 10px;
+  cursor: pointer;
+}
+
+.friends-invite button.ghost {
+  background: transparent;
+}
+
 .friend-row {
   display: flex;
   align-items: center;
   gap: 8px;
   margin-bottom: 6px;
+}
+
+.friend-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.friend-actions button {
+  border: 2px solid #3d2c29;
+  border-radius: 999px;
+  background: #ffe8a3;
+  padding: 4px 8px;
+  cursor: pointer;
+  white-space: nowrap;
 }
 
 .friend-meta {
@@ -1174,11 +1219,12 @@ html.world-host #root {
 }
 
 .world-bar {
-  height: 36px;
+  min-height: 36px;
   display: flex;
   align-items: center;
-  gap: 12px;
-  padding: 0 10px;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+  padding: 4px 10px;
   border-bottom: 3px solid #3d2c29;
   background: #4a332e;
   -webkit-app-region: drag;
@@ -1191,8 +1237,29 @@ html.world-host #root {
 .world-bar-actions {
   margin-left: auto;
   display: flex;
+  flex-wrap: wrap;
+  align-items: center;
   gap: 6px;
   -webkit-app-region: no-drag;
+}
+
+.world-bar-actions button {
+  border: 2px solid #3d2c29;
+  border-radius: 999px;
+  background: #ffe8a3;
+  padding: 4px 8px;
+  cursor: pointer;
+  color: #3d2c29;
+}
+
+.world-bar-actions button.ghost {
+  background: transparent;
+  color: #fff8f2;
+}
+
+.world-invite {
+  font-size: 12px;
+  color: #ffe8a3;
 }
 
 .world-zoom {
