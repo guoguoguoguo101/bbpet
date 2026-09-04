@@ -236,6 +236,7 @@ export class RoomClient {
         poses: posesFrom(msg.you, msg.home.people),
         dresses: dressesFrom(msg.you, msg.home.people),
         lastEmote: null,
+        game: msg.game ?? null,
       }
       this.emit()
       this.flush()
@@ -243,6 +244,11 @@ export class RoomClient {
       if (this.schoolTarget && this.schoolTarget !== msg.you.schoolPlaceId) {
         this.send({ type: 'enterPlace', placeId: this.schoolTarget })
       }
+      return
+    }
+    if (msg.type === 'gameState') {
+      this.view = { ...this.view, game: msg.game, error: '' }
+      this.emit()
       return
     }
     if (msg.type === 'snapshot') {

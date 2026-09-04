@@ -25,6 +25,7 @@ const api = {
   closePanel: () => ipcRenderer.send('close-panel'),
   openWorld: () => ipcRenderer.send('open-world'),
   closeWorld: () => ipcRenderer.send('close-world'),
+  closeGame: () => ipcRenderer.send('close-game'),
   leaveWorld: () => ipcRenderer.send('leave-world'),
   openUrl: (url) => ipcRenderer.send('open-url', url),
   reportBubbleSize: (width, height) => ipcRenderer.send('bubble-size', { width, height }),

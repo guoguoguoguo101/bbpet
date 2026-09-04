@@ -32,6 +32,7 @@ import {
   type ServerMsg,
 } from '../shared/world'
 import { createFriendsStore } from './friendsStore'
+import { createGomokuTable } from './gomokuTable'
 
 interface Client {
   ws: WebSocket
@@ -58,6 +59,40 @@ export function startRoomServer(port: number, options?: { friendsFile?: string }
     if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(msg))
   }
 
+  const games = createGomokuTable({
+    world: {
+      isFriend: (a, b) => friends.isFriend(a, b),
+      isOnline: (id) => byId.has(id),
+      player: (id) => {
+        const client = byId.get(id)
+        if (!client) return null
+        const p = client.presence
+        return { clientId: p.clientId, name: p.name, species: p.species, colors: p.colors }
+      },
+    },
+    sink: {
+      sendGame: (id, game) => {
+        const client = byId.get(id)
+        if (client) send(client.ws, { type: 'gameState', game })
+        // Defer so end() can forget() before friend cards read isBusy.
+        // Notify once per snapshot (black send) to avoid duplicate fan-out.
+        if (id !== game.black.clientId) return
+        queueMicrotask(() => {
+          notifyFriendLists(game.black.clientId)
+          notifyFriendLists(game.white.clientId)
+        })
+      },
+      sendError: (id, message) => {
+        const client = byId.get(id)
+        if (client) send(client.ws, { type: 'error', message })
+      },
+      sendNotice: (id, text) => {
+        const client = byId.get(id)
+        if (client) send(client.ws, { type: 'notice', text })
+      },
+    },
+  })
+
   const cardFor = (id: string): FriendCard => {
     const online = byId.get(id)
     const rec = friends.get(id)
@@ -70,6 +105,7 @@ export function startRoomServer(port: number, options?: { friendsFile?: string }
       placeId: online ? displayPlace(online.presence) : null,
       homeId: online?.presence.homeId ?? null,
       schoolPlaceId: online?.presence.schoolPlaceId ?? null,
+      inGame: games.isBusy(id),
     }
   }
 
@@ -174,6 +210,7 @@ export function startRoomServer(port: number, options?: { friendsFile?: string }
     if (!client) return
     clients.delete(ws)
     if (byId.get(client.presence.clientId) === client) byId.delete(client.presence.clientId)
+    games.onDisconnect(client.presence.clientId)
     broadcast(client.presence.homeId, { type: 'leave', clientId: client.presence.clientId, placeId: client.presence.homeId })
     if (client.presence.schoolPlaceId) {
       broadcast(client.presence.schoolPlaceId, {
@@ -237,11 +274,13 @@ export function startRoomServer(port: number, options?: { friendsFile?: string }
         const client: Client = { ws, presence, lastChatAt: 0, chatBurst: 0, lastPoseAt: 0, lastEmoteAt: 0, lastDressAt: 0 }
         clients.set(ws, client)
         byId.set(msg.clientId, client)
+        games.onReconnect(msg.clientId)
         send(ws, {
           type: 'welcome',
           you: presence,
           home: snapshot(homeId, presence.clientId),
           school: null,
+          game: games.gameFor(presence.clientId),
         })
         broadcast(homeId, { type: 'join', person: presence, placeId: homeId }, ws)
         notifyFriendLists(msg.clientId)
@@ -467,6 +506,24 @@ export function startRoomServer(port: number, options?: { friendsFile?: string }
         const targetId = String(msg.targetId || '')
         friends.decline(client.presence.clientId, targetId)
         sendFriends(client.presence.clientId)
+        return
+      }
+
+      if (msg.type === 'inviteGame') {
+        games.invite(client.presence.clientId, String(msg.targetId || ''))
+        return
+      }
+      if (msg.type === 'gameRespond') {
+        games.respond(client.presence.clientId, String(msg.gameId || ''), Boolean(msg.accept))
+        return
+      }
+      if (msg.type === 'gameMove') {
+        games.move(client.presence.clientId, String(msg.gameId || ''), Number(msg.x), Number(msg.y))
+        return
+      }
+      if (msg.type === 'gameResign') {
+        games.resign(client.presence.clientId, String(msg.gameId || ''))
+        return
       }
     })
 

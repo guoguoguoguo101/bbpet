@@ -26,6 +26,7 @@ export interface BbPetApi {
   closePanel: () => void
   openWorld: () => void
   closeWorld: () => void
+  closeGame: () => void
   leaveWorld: () => void
   openUrl: (url: string) => void
   reportBubbleSize: (width: number, height: number) => void

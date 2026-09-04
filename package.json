@@ -12,7 +12,8 @@
     "room": "tsx server/cli.ts",
     "build": "vite build",
     "dist": "node scripts/write-icon.mjs && vite build && electron-builder",
-    "icon": "node scripts/write-icon.mjs"
+    "icon": "node scripts/write-icon.mjs",
+    "test": "tsx --test shared/gomoku.test.ts shared/gameView.test.ts server/gomokuTable.test.ts"
   },
   "devDependencies": {
     "@types/node": "^22.13.10",

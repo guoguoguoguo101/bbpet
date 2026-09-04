@@ -31,6 +31,8 @@ let win: BrowserWindow | null = null
 let panelWin: BrowserWindow | null = null
 let bubbleWin: BrowserWindow | null = null
 let worldWin: BrowserWindow | null = null
+let gameWin: BrowserWindow | null = null
+let lastGameStatus: string | null = null
 let menuAnchor: BrowserWindow | null = null
 let tray: Tray | null = null
 let store: JsonStore
@@ -47,6 +49,25 @@ let roomHostError = ''
 let leaveWorldNext = false
 let worldResizeTimer: NodeJS.Timeout | null = null
 let petSenseTimer: NodeJS.Timeout | null = null
+
+function pinOnTop(target: BrowserWindow | null | undefined) {
+  if (!target || target.isDestroyed()) return
+  target.setAlwaysOnTop(true, 'screen-saver')
+  if (target.isVisible()) target.moveTop()
+}
+
+function pinDeskPet() {
+  pinOnTop(win)
+  pinOnTop(panelWin)
+  pinOnTop(bubbleWin)
+}
+
+function keepPinned(target: BrowserWindow) {
+  target.on('always-on-top-changed', (_event, isAlwaysOnTop) => {
+    if (quitting || isAlwaysOnTop || !target.isVisible()) return
+    pinOnTop(target)
+  })
+}
 let keyWatch: ChildProcess | null = null
 let typingUntil = 0
 let lastPetPlay = ''
@@ -210,6 +231,8 @@ function ensureBubbleWindow() {
   bubbleWin.setMenuBarVisibility(false)
   bubbleWin.setTitle(' ')
   bubbleWin.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true })
+  keepPinned(bubbleWin)
+  pinOnTop(bubbleWin)
   bubbleWin.on('close', (event) => {
     if (quitting) return
     event.preventDefault()
@@ -241,10 +264,7 @@ function openExternalQuiet(url: string) {
   win?.setAlwaysOnTop(false)
   panelWin?.setAlwaysOnTop(false)
   void shell.openExternal(url).finally(() => {
-    setTimeout(() => {
-      win?.setAlwaysOnTop(true)
-      panelWin?.setAlwaysOnTop(true)
-    }, 600)
+    setTimeout(() => pinDeskPet(), 600)
   })
 }
 
@@ -380,6 +400,10 @@ function bindRoomClient() {
     win?.webContents.send('room-state', view)
     panelWin?.webContents.send('room-state', view)
     worldWin?.webContents.send('room-state', view)
+    gameWin?.webContents.send('room-state', view)
+    const status = view.game?.status ?? null
+    if (status === 'playing' && lastGameStatus !== 'playing') void showGame()
+    lastGameStatus = status
     broadcastWorldStatus()
     if (view.notice && view.notice !== lastNotice) {
       lastNotice = view.notice
@@ -444,6 +468,70 @@ async function showWorld() {
   broadcastWorldStatus()
 }
 
+function ensureGameWindow() {
+  if (gameWin && !gameWin.isDestroyed()) return
+  gameWin = new BrowserWindow({
+    width: 560,
+    height: 640,
+    show: false,
+    frame: false,
+    transparent: false,
+    alwaysOnTop: false,
+    skipTaskbar: false,
+    resizable: false,
+    backgroundColor: '#1c1410',
+    title: 'BbPet 五子棋',
+    focusable: true,
+    webPreferences: {
+      preload: join(__dirname, 'preload.cjs'),
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: false,
+    },
+  })
+  gameWin.setMenuBarVisibility(false)
+  gameWin.on('close', () => {
+    const game = roomClient.get().game
+    if (game?.status === 'playing') {
+      roomClient.send({ type: 'gameResign', gameId: game.id })
+    }
+  })
+  gameWin.on('closed', () => {
+    gameWin = null
+  })
+}
+
+function destroyGameWindow() {
+  if (!gameWin || gameWin.isDestroyed()) {
+    gameWin = null
+    return
+  }
+  gameWin.close()
+}
+
+async function showGame() {
+  ensureGameWindow()
+  if (!gameWin) return
+  const sendState = () => {
+    if (!gameWin || gameWin.isDestroyed()) return
+    gameWin.webContents.send('room-state', roomClient.get())
+    gameWin.webContents.send('state-changed', store.get())
+  }
+  const loaded = gameWin.webContents.getURL().includes('#game')
+  if (loaded) {
+    gameWin.show()
+    gameWin.focus()
+    gameWin.webContents.focus()
+    sendState()
+    return
+  }
+  gameWin.webContents.once('did-finish-load', sendState)
+  loadPage(gameWin, 'game')
+  gameWin.show()
+  gameWin.focus()
+  gameWin.webContents.focus()
+}
+
 function lanRoomUrls(port: number) {
   const urls = [`ws://127.0.0.1:${port}`]
   for (const list of Object.values(networkInterfaces())) {
@@ -489,6 +577,7 @@ function revealPanel(kind: PanelKind) {
   panelWin.webContents.send('set-panel', kind)
   panelWin.show()
   panelWin.focus()
+  pinOnTop(panelWin)
   setTimeout(() => {
     if (panelKind !== kind || !panelWin?.isVisible()) return
     allowPanelBlurClose = true
@@ -543,6 +632,8 @@ function ensurePanelWindow() {
   panelWin.setMenuBarVisibility(false)
   panelWin.setTitle(' ')
   panelWin.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true })
+  keepPinned(panelWin)
+  pinOnTop(panelWin)
   panelWin.on('blur', () => {
     if (!allowPanelBlurClose || panelKind === 'wizard') return
     hidePanel()
@@ -559,6 +650,7 @@ function broadcastState() {
   win?.webContents.send('state-changed', state)
   panelWin?.webContents.send('state-changed', state)
   worldWin?.webContents.send('state-changed', state)
+  gameWin?.webContents.send('state-changed', state)
 }
 
 function nativeHwnd(target: BrowserWindow) {
@@ -798,6 +890,8 @@ function createWindow() {
   win.setMenuBarVisibility(false)
   win.setTitle(' ')
   win.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true })
+  keepPinned(win)
+  pinOnTop(win)
   setupTransparentGuards(win)
   placeWindow('pet')
   win.setIgnoreMouseEvents(true, { forward: true })
@@ -811,6 +905,7 @@ function createWindow() {
       if (!win) return
       win.setBackgroundColor('#00000000')
       win.showInactive()
+      pinOnTop(win)
       clearWindowShape()
       setTimeout(() => {
         void refreshWeather(true).catch(() => undefined)
@@ -850,6 +945,7 @@ function toggleWindow() {
     win.hide()
   } else {
     win.showInactive()
+    pinOnTop(win)
   }
 }
 
@@ -1013,6 +1109,7 @@ function registerIpc() {
   ipcMain.on('close-panel', () => hidePanel())
   ipcMain.on('open-world', () => void showWorld())
   ipcMain.on('close-world', () => hideWorld())
+  ipcMain.on('close-game', () => destroyGameWindow())
   ipcMain.on('leave-world', () => leaveWorld())
   ipcMain.on('open-url', (_event, url: string) => {
     if (!/^https?:\/\//i.test(url)) return
@@ -1037,6 +1134,7 @@ function registerIpc() {
     bubbleWin.setSize(bubbleSize.width, bubbleSize.height)
     placeBubble()
     bubbleWin.showInactive()
+    pinOnTop(bubbleWin)
   })
   ipcMain.on('quit-app', () => app.quit())
 }
@@ -1054,6 +1152,7 @@ app.whenReady().then(() => {
     createWindow()
     createTray()
     restartPushTimer()
+    screen.on('display-metrics-changed', () => pinDeskPet())
     void syncRoomHost().then(() => void ensureRoom())
   }
   if (process.platform === 'win32') setTimeout(start, 160)
