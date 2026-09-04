@@ -1,4 +1,4 @@
-import type { PetColors, PetProfile, Species } from './types'
+import type { PetColors, PetPose, PetProfile, Species, WeatherFx, WeatherGear } from './types'
 
 export const TILE = 32
 export const PET_SIZE = 32
@@ -15,6 +15,60 @@ export type SchoolPlaceId = 'school:campus' | 'school:class-1' | 'school:class-2
 export type HomePlaceId = `home:${string}`
 export type PlaceId = SchoolPlaceId | HomePlaceId | 'away'
 
+export type EmoteKind = 'wave' | 'hug' | 'pour' | 'wake' | 'kick'
+
+export const EMOTE_KINDS: EmoteKind[] = ['wave', 'hug', 'pour', 'wake', 'kick']
+export const DIRECTED_EMOTES: EmoteKind[] = ['hug', 'pour', 'wake', 'kick']
+export const SYNC_POSES: PetPose[] = [
+  'idle',
+  'talk',
+  'drink',
+  'sleep',
+  'wake',
+  'type',
+  'phone',
+  'snack',
+  'peek',
+  'game',
+  'wave',
+  'coffee',
+  'toilet',
+]
+
+export const EMOTE_LABELS: Record<EmoteKind, string> = {
+  wave: '挥手',
+  hug: '抱抱',
+  pour: '倒水',
+  wake: '拍醒',
+  kick: '飞踢',
+}
+
+export function isEmoteKind(value: string): value is EmoteKind {
+  return (EMOTE_KINDS as string[]).includes(value)
+}
+
+export function isSyncPose(value: string): value is PetPose {
+  return (SYNC_POSES as string[]).includes(value)
+}
+
+export interface PetDress {
+  gear: WeatherGear[]
+  fx: WeatherFx[]
+}
+
+export const EMPTY_DRESS: PetDress = { gear: [], fx: [] }
+
+const GEAR_OK: WeatherGear[] = ['shades', 'raincoat', 'scarf', 'beanie', 'umbrella', 'snowman', 'juice']
+const FX_OK: WeatherFx[] = ['rain', 'snow', 'sun', 'fog', 'storm', 'wind', 'stars', 'cloud']
+
+export function sanitizeDress(raw: unknown): PetDress {
+  const value = raw && typeof raw === 'object' ? (raw as PetDress) : EMPTY_DRESS
+  return {
+    gear: Array.isArray(value.gear) ? value.gear.filter((item): item is WeatherGear => (GEAR_OK as string[]).includes(item)).slice(0, 8) : [],
+    fx: Array.isArray(value.fx) ? value.fx.filter((item): item is WeatherFx => (FX_OK as string[]).includes(item)).slice(0, 8) : [],
+  }
+}
+
 export interface Presence {
   clientId: string
   name: string
@@ -26,6 +80,17 @@ export interface Presence {
   x: number
   y: number
   facing: Facing
+  pose: PetPose
+  dress: PetDress
+}
+
+export interface HomeEmote {
+  id: string
+  fromId: string
+  targetId?: string
+  kind: EmoteKind
+  ts: number
+  placeId: PlaceId
 }
 
 export interface ChatLine {
@@ -71,6 +136,9 @@ export interface RoomView {
   notice: string
   lastChat: ChatLine | null
   lastHomeChat: ChatLine | null
+  poses: Record<string, PetPose>
+  dresses: Record<string, PetDress>
+  lastEmote: HomeEmote | null
 }
 
 export type ClientMsg =
@@ -81,6 +149,9 @@ export type ClientMsg =
   | { type: 'friendRequest'; targetId: string }
   | { type: 'friendAccept'; targetId: string }
   | { type: 'friendDecline'; targetId: string }
+  | { type: 'pose'; pose: PetPose; placeId?: PlaceId }
+  | { type: 'dress'; dress: PetDress; placeId?: PlaceId }
+  | { type: 'emote'; kind: EmoteKind; targetId?: string; placeId?: PlaceId }
 
 export type ServerMsg =
   | { type: 'welcome'; you: Presence; home: WorldSnapshot; school: WorldSnapshot | null }
@@ -92,6 +163,9 @@ export type ServerMsg =
   | { type: 'friends'; friends: FriendCard[]; incoming: FriendCard[] }
   | { type: 'notice'; text: string }
   | { type: 'error'; message: string }
+  | { type: 'pose'; clientId: string; pose: PetPose; placeId: PlaceId }
+  | { type: 'dress'; clientId: string; dress: PetDress; placeId: PlaceId }
+  | { type: 'emote'; emote: HomeEmote }
 
 export interface WorldSnapshot {
   placeId: PlaceId
@@ -195,6 +269,10 @@ export function isPlaceId(value: string): value is PlaceId {
   return value === 'away' || isSchoolPlace(value) || isHomePlace(value)
 }
 
+export function isFriendAtHome(card: Pick<FriendCard, 'online' | 'clientId' | 'homeId'>) {
+  return Boolean(card.online && card.homeId === homePlaceId(card.clientId))
+}
+
 export function homeOwnerId(placeId: PlaceId) {
   return isHomePlace(placeId) ? placeId.slice(5) : null
 }
@@ -240,6 +318,9 @@ export function emptyRoomView(): RoomView {
     notice: '',
     lastChat: null,
     lastHomeChat: null,
+    poses: {},
+    dresses: {},
+    lastEmote: null,
   }
 }
 

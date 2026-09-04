@@ -3,6 +3,12 @@ import { POSE_LINES, WEATHER_LINES } from './weatherLines'
 
 export type DemoGroup = 'pose' | 'weather' | 'slack'
 
+export const SLACK_POSES = ['phone', 'snack', 'peek', 'game', 'coffee', 'toilet'] as const
+
+export function isSlackPose(pose: PetPose) {
+  return (SLACK_POSES as readonly PetPose[]).includes(pose)
+}
+
 export interface DemoAction {
   id: string
   group: DemoGroup
@@ -47,6 +53,8 @@ export const DEMO_ACTIONS: DemoAction[] = [
   { id: 'snack', group: 'slack', label: '偷吃', pose: 'snack', lines: POSE_LINES.snack, weather: CLEAR_WEATHER },
   { id: 'peek', group: 'slack', label: '张望', pose: 'peek', lines: POSE_LINES.peek, weather: CLEAR_WEATHER },
   { id: 'game', group: 'slack', label: '打游戏', pose: 'game', lines: POSE_LINES.game, weather: CLEAR_WEATHER },
+  { id: 'coffee', group: 'slack', label: '喝咖啡', pose: 'coffee', lines: POSE_LINES.coffee, weather: CLEAR_WEATHER },
+  { id: 'toilet', group: 'slack', label: '上厕所', pose: 'toilet', lines: POSE_LINES.toilet, weather: CLEAR_WEATHER },
     {
     id: 'wx-sun',
     group: 'weather',

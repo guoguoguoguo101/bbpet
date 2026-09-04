@@ -404,9 +404,10 @@ function bindRoomClient() {
       const n = Math.max(1, 1 + view.homePeople.length)
       const cols = Math.min(n, 5)
       const rows = Math.ceil(n / 5)
-      const next = { width: Math.max(192, cols * 64), height: rows * 86 + 76 }
-      if (next.width !== petLayout.width || next.height !== petLayout.height) {
-        petLayout = next
+      const minW = Math.max(148, cols * 64 + 58)
+      const minH = Math.max(148, rows * 90 + 48)
+      if (petLayout.width < minW || petLayout.height < minH) {
+        petLayout = { width: Math.max(petLayout.width, minW), height: Math.max(petLayout.height, minH) }
         placeWindow()
       }
       return
@@ -972,9 +973,10 @@ function registerIpc() {
   ipcMain.on('leave-home', () => leaveHome())
   ipcMain.on('pet-layout', (_event, size: { width: number; height: number }) => {
     if (!size || typeof size.width !== 'number' || typeof size.height !== 'number') return
+    const gathering = isHomeGathering(roomClient.get().you, roomClient.get().homePeople, store.get().clientId)
     const next = {
-      width: Math.max(80, Math.min(800, Math.round(size.width))),
-      height: Math.max(108, Math.min(560, Math.round(size.height))),
+      width: Math.max(gathering ? 148 : 80, Math.min(800, Math.round(size.width))),
+      height: Math.max(gathering ? 148 : 108, Math.min(560, Math.round(size.height))),
     }
     if (next.width === petLayout.width && next.height === petLayout.height) return
     petLayout = next
