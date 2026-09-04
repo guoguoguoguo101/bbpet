@@ -31,6 +31,8 @@ let win: BrowserWindow | null = null
 let panelWin: BrowserWindow | null = null
 let bubbleWin: BrowserWindow | null = null
 let worldWin: BrowserWindow | null = null
+let gameWin: BrowserWindow | null = null
+let lastGameStatus: string | null = null
 let menuAnchor: BrowserWindow | null = null
 let tray: Tray | null = null
 let store: JsonStore
@@ -377,6 +379,10 @@ function bindRoomClient() {
     win?.webContents.send('room-state', view)
     panelWin?.webContents.send('room-state', view)
     worldWin?.webContents.send('room-state', view)
+    gameWin?.webContents.send('room-state', view)
+    const status = view.game?.status ?? null
+    if (status === 'playing' && lastGameStatus !== 'playing') void showGame()
+    lastGameStatus = status
     broadcastWorldStatus()
     if (view.notice && view.notice !== lastNotice) {
       lastNotice = view.notice
@@ -439,6 +445,70 @@ async function showWorld() {
   worldWin.focus()
   worldWin.webContents.focus()
   broadcastWorldStatus()
+}
+
+function ensureGameWindow() {
+  if (gameWin && !gameWin.isDestroyed()) return
+  gameWin = new BrowserWindow({
+    width: 560,
+    height: 640,
+    show: false,
+    frame: false,
+    transparent: false,
+    alwaysOnTop: false,
+    skipTaskbar: false,
+    resizable: false,
+    backgroundColor: '#1c1410',
+    title: 'BbPet 五子棋',
+    focusable: true,
+    webPreferences: {
+      preload: join(__dirname, 'preload.cjs'),
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: false,
+    },
+  })
+  gameWin.setMenuBarVisibility(false)
+  gameWin.on('close', () => {
+    const game = roomClient.get().game
+    if (game?.status === 'playing') {
+      roomClient.send({ type: 'gameResign', gameId: game.id })
+    }
+  })
+  gameWin.on('closed', () => {
+    gameWin = null
+  })
+}
+
+function destroyGameWindow() {
+  if (!gameWin || gameWin.isDestroyed()) {
+    gameWin = null
+    return
+  }
+  gameWin.close()
+}
+
+async function showGame() {
+  ensureGameWindow()
+  if (!gameWin) return
+  const sendState = () => {
+    if (!gameWin || gameWin.isDestroyed()) return
+    gameWin.webContents.send('room-state', roomClient.get())
+    gameWin.webContents.send('state-changed', store.get())
+  }
+  const loaded = gameWin.webContents.getURL().includes('#game')
+  if (loaded) {
+    gameWin.show()
+    gameWin.focus()
+    gameWin.webContents.focus()
+    sendState()
+    return
+  }
+  gameWin.webContents.once('did-finish-load', sendState)
+  loadPage(gameWin, 'game')
+  gameWin.show()
+  gameWin.focus()
+  gameWin.webContents.focus()
 }
 
 function lanRoomUrls(port: number) {
@@ -556,6 +626,7 @@ function broadcastState() {
   win?.webContents.send('state-changed', state)
   panelWin?.webContents.send('state-changed', state)
   worldWin?.webContents.send('state-changed', state)
+  gameWin?.webContents.send('state-changed', state)
 }
 
 function nativeHwnd(target: BrowserWindow) {
@@ -1008,6 +1079,7 @@ function registerIpc() {
   ipcMain.on('close-panel', () => hidePanel())
   ipcMain.on('open-world', () => void showWorld())
   ipcMain.on('close-world', () => hideWorld())
+  ipcMain.on('close-game', () => destroyGameWindow())
   ipcMain.on('leave-world', () => leaveWorld())
   ipcMain.on('open-url', (_event, url: string) => {
     if (!/^https?:\/\//i.test(url)) return

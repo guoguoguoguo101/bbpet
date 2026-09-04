@@ -1,3 +1,4 @@
+import type { Stone } from './gomoku'
 import type { PetColors, PetPose, PetProfile, Species, WeatherFx, WeatherGear } from './types'
 
 export const TILE = 32
@@ -120,6 +121,7 @@ export interface FriendCard {
   placeId: PlaceId | null
   homeId: HomePlaceId | null
   schoolPlaceId: SchoolPlaceId | null
+  inGame: boolean
 }
 
 export interface RoomView {
@@ -139,6 +141,53 @@ export interface RoomView {
   poses: Record<string, PetPose>
   dresses: Record<string, PetDress>
   lastEmote: HomeEmote | null
+  game: GameView | null
+}
+
+export type GameStatus = 'pending' | 'playing' | 'ended'
+export type GameEndReason = 'five' | 'draw' | 'resign' | 'timeout' | 'disconnect' | 'expired' | 'declined'
+export type GameRole = 'black' | 'white'
+
+export interface GamePlayer {
+  clientId: string
+  name: string
+  species: Species
+  colors: PetColors
+}
+
+export interface GameResult {
+  winnerId: string | null
+  reason: GameEndReason
+}
+
+export interface GameView {
+  id: string
+  status: GameStatus
+  black: GamePlayer
+  white: GamePlayer
+  board: Stone[][]
+  turn: 1 | 2
+  deadlineAt: number
+  lastMove: { x: number; y: number } | null
+  winLine: { x: number; y: number }[] | null
+  result: GameResult | null
+  you: GameRole
+}
+
+export function isGameBusy(game: GameView | null | undefined) {
+  return Boolean(game && (game.status === 'pending' || game.status === 'playing'))
+}
+
+export function isIncomingInvite(game: GameView | null | undefined) {
+  return Boolean(game && game.status === 'pending' && game.you === 'white')
+}
+
+export function canInviteFriend(
+  game: GameView | null | undefined,
+  myId: string,
+  card: Pick<FriendCard, 'clientId' | 'online' | 'inGame'>,
+) {
+  return card.clientId !== myId && card.online && !card.inGame && !isGameBusy(game)
 }
 
 export type ClientMsg =
@@ -152,9 +201,14 @@ export type ClientMsg =
   | { type: 'pose'; pose: PetPose; placeId?: PlaceId }
   | { type: 'dress'; dress: PetDress; placeId?: PlaceId }
   | { type: 'emote'; kind: EmoteKind; targetId?: string; placeId?: PlaceId }
+  | { type: 'inviteGame'; targetId: string }
+  | { type: 'gameRespond'; gameId: string; accept: boolean }
+  | { type: 'gameMove'; gameId: string; x: number; y: number }
+  | { type: 'gameResign'; gameId: string }
 
 export type ServerMsg =
-  | { type: 'welcome'; you: Presence; home: WorldSnapshot; school: WorldSnapshot | null }
+  | { type: 'welcome'; you: Presence; home: WorldSnapshot; school: WorldSnapshot | null; game?: GameView | null }
+  | { type: 'gameState'; game: GameView }
   | { type: 'snapshot'; you: Presence; snapshot: WorldSnapshot }
   | { type: 'join'; person: Presence; placeId: PlaceId }
   | { type: 'leave'; clientId: string; placeId: PlaceId }
@@ -321,6 +375,7 @@ export function emptyRoomView(): RoomView {
     poses: {},
     dresses: {},
     lastEmote: null,
+    game: null,
   }
 }
 

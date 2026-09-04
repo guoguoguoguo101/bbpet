@@ -10,6 +10,7 @@ import { PixelPet } from './pet/PixelPet'
 import { WeatherDress } from './pet/WeatherDress'
 import { BubbleApp } from './ui/BubbleApp'
 import { PanelApp } from './ui/PanelApp'
+import { GomokuApp } from './game/GomokuApp'
 import { WorldApp } from './world/WorldApp'
 
 function currentHash() {
@@ -31,6 +32,7 @@ export function App() {
 
   if (hash === 'bubble') return <BubbleApp />
   if (hash === 'world') return <WorldApp />
+  if (hash === 'game') return <GomokuApp />
   if (hash === 'hub' || hash === 'chat' || hash === 'settings' || hash === 'wizard' || hash === 'friends') {
     return <PanelApp kind={hash as PanelKind} />
   }
