@@ -21,6 +21,9 @@ func redraw() -> void:
 	_image = PetTemplates.paint_image(frame, colors, pixel_size)
 	texture = ImageTexture.create_from_image(_image)
 	flip_h = flip
+	var control_size := Vector2(16 * pixel_size, 16 * pixel_size)
+	custom_minimum_size = control_size
+	size = control_size
 
 func current_image() -> Image:
 	return _image
