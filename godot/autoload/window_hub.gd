@@ -3,14 +3,48 @@ extends Node
 signal panel_toggled
 
 const PANEL_SCENE = preload("res://windows/panel_window.tscn")
+const MENU_SHOW := 1
+const MENU_HIDE := 2
+const MENU_QUIT := 3
 
 var _has_tray := false
 var _panel: Window
 
 
 func _ready() -> void:
-	if DisplayServer.get_name() != "headless" and not AppState.state.onboarded:
+	if DisplayServer.get_name() == "headless":
+		return
+	_setup_tray()
+	if not AppState.state.onboarded:
 		open_panel.call_deferred("wizard")
+
+
+func _setup_tray() -> void:
+	if not DisplayServer.has_feature(DisplayServer.FEATURE_STATUS_INDICATOR):
+		_has_tray = false
+		return
+	var indicator := StatusIndicator.new()
+	if indicator.get_class() != "StatusIndicator":
+		indicator.free()
+		_has_tray = false
+		return
+	indicator.tooltip = "BbPet"
+	var pet: Dictionary = AppState.state.pet
+	var frame := PetTemplates.get_frame(pet.species, "idle")
+	var image := PetTemplates.paint_image(frame, pet.colors, 1)
+	indicator.icon = ImageTexture.create_from_image(image)
+
+	var menu := PopupMenu.new()
+	menu.add_item("显示", MENU_SHOW)
+	menu.add_item("隐藏", MENU_HIDE)
+	menu.add_separator()
+	menu.add_item("退出", MENU_QUIT)
+	add_child(menu)
+	add_child(indicator)
+	indicator.menu = menu.get_path()
+	indicator.pressed.connect(_on_tray_pressed)
+	menu.id_pressed.connect(_on_tray_menu)
+	_has_tray = true
 
 
 func toggle_panel() -> void:
@@ -89,9 +123,27 @@ func hide_pet() -> void:
 
 
 func quit_app() -> void:
+	RoomClient.disconnect_room()
 	get_tree().quit()
 
 
 func show_pet() -> void:
-	get_window().mode = Window.MODE_WINDOWED
-	get_window().always_on_top = true
+	var pet_window := get_window()
+	pet_window.show()
+	pet_window.mode = Window.MODE_WINDOWED
+	pet_window.always_on_top = true
+
+
+func _on_tray_pressed(mouse_button: int, _mouse_position: Vector2i) -> void:
+	if mouse_button == MOUSE_BUTTON_LEFT:
+		show_pet()
+
+
+func _on_tray_menu(id: int) -> void:
+	match id:
+		MENU_SHOW:
+			show_pet()
+		MENU_HIDE:
+			hide_pet()
+		MENU_QUIT:
+			quit_app()
