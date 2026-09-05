@@ -6,6 +6,8 @@ func run() -> int:
 	var failed := 0
 	var r: Vector2 = PetSync.round_pose(1.26, 2.24)
 	failed += _check("round", is_equal_approx(r.x, 1.3) and is_equal_approx(r.y, 2.2))
+	var neg: Vector2 = PetSync.round_pose(-1.25, 1.25)
+	failed += _check("round negative tie", is_equal_approx(neg.x, -1.2) and is_equal_approx(neg.y, 1.3))
 	var mid: Dictionary = PetSync.interpolate_pose(0.0, 0.0, 10.0, 0.0, 0.0, 70.0, 140.0)
 	failed += _check("lerp t", is_equal_approx(mid.t, 0.5) and is_equal_approx(mid.x, 5.0))
 	failed += _check("facing early", PetSync.pose_facing("l", "r", 0.2) == "l")

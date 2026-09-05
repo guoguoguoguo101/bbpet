@@ -4,8 +4,11 @@ extends RefCounted
 
 const SchoolLogic = preload("res://school/school_logic.gd")
 
+static func _js_round_1(x: float) -> float:
+	return floor(x * 10.0 + 0.5) / 10.0
+
 static func round_pose(x: float, y: float) -> Vector2:
-	return Vector2(snapped(x, 0.1), snapped(y, 0.1))
+	return Vector2(_js_round_1(x), _js_round_1(y))
 
 static func interpolate_pose(from_x: float, from_y: float, to_x: float, to_y: float, from_at: float, now: float, dur: float = -1.0) -> Dictionary:
 	if dur < 0.0:
