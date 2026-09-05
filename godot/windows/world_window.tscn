@@ -48,3 +48,24 @@ size_flags_vertical = 3
 texture_filter = 1
 expand_mode = 1
 stretch_mode = 0
+
+[node name="ChatBar" type="VBoxContainer" parent="VBox"]
+visible = false
+layout_mode = 2
+
+[node name="ChatHint" type="Label" parent="VBox/ChatBar"]
+layout_mode = 2
+text = "黑板只有本班听得见"
+
+[node name="ChatRow" type="HBoxContainer" parent="VBox/ChatBar"]
+layout_mode = 2
+
+[node name="ChatInput" type="LineEdit" parent="VBox/ChatBar/ChatRow"]
+layout_mode = 2
+size_flags_horizontal = 3
+placeholder_text = "点这里或按 Enter 写黑板"
+max_length = 80
+
+[node name="ChatSend" type="Button" parent="VBox/ChatBar/ChatRow"]
+layout_mode = 2
+text = "发送"

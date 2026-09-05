@@ -12,6 +12,10 @@ const CAMERA_SCALE := 1.8
 @onready var _stage: Control = $VBox/Stage
 @onready var _map_root: Node2D = $VBox/Stage/MapRoot
 @onready var _map_texture: TextureRect = $VBox/Stage/MapRoot/Map
+@onready var _chat_bar: VBoxContainer = $VBox/ChatBar
+@onready var _chat_hint: Label = $VBox/ChatBar/ChatHint
+@onready var _chat_input: LineEdit = $VBox/ChatBar/ChatRow/ChatInput
+@onready var _chat_send: Button = $VBox/ChatBar/ChatRow/ChatSend
 
 var _place_id := ""
 var _place: Dictionary = {}
@@ -26,6 +30,7 @@ var _was_moving := false
 var _alert := ""
 var _inspect_id := ""
 var _inspect_menu: Control
+var _board_overlay: Control
 
 
 func _ready() -> void:
@@ -42,6 +47,15 @@ func _ready() -> void:
 	_stage.resized.connect(_update_camera)
 	_stage.gui_input.connect(_on_stage_input)
 	_map_texture.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_chat_hint.text = "黑板只有本班听得见"
+	_chat_input.placeholder_text = "点这里或按 Enter 写黑板"
+	_chat_send.text = "发送"
+	_chat_send.pressed.connect(_submit_chat)
+	_chat_input.text_submitted.connect(func(_t): _submit_chat())
+	if not RoomClient.chat_received.is_connected(_on_chat_received):
+		RoomClient.chat_received.connect(_on_chat_received)
+	if not RoomClient.friends_changed.is_connected(_on_friends_changed_world):
+		RoomClient.friends_changed.connect(_on_friends_changed_world)
 
 
 func apply_snapshot(you: Dictionary, people: Array, place_id: String) -> void:
@@ -64,6 +78,7 @@ func apply_snapshot(you: Dictionary, people: Array, place_id: String) -> void:
 		_close_inspect()
 	_update_status()
 	_update_camera()
+	_refresh_board()
 
 
 func apply_others(people: Array) -> void:
@@ -108,7 +123,7 @@ func _physics_process(delta: float) -> void:
 	_interpolate_others()
 	_sync_pet_transforms()
 	_update_camera()
-	if _place.is_empty() or _you.is_empty() or not has_focus():
+	if _place.is_empty() or _you.is_empty() or not has_focus() or _chat_focused():
 		return
 
 	var direction := _movement_direction()
@@ -156,6 +171,10 @@ func _movement_direction() -> Vector2:
 	)
 	var direction := Vector2(x, y)
 	return direction.normalized() if direction != Vector2.ZERO else direction
+
+
+func _chat_focused() -> bool:
+	return is_instance_valid(_chat_input) and _chat_input.has_focus()
 
 
 func _send_current_pose() -> void:
@@ -284,6 +303,65 @@ func _on_stage_input(event: InputEvent) -> void:
 		focus.release_focus()
 
 
+func _submit_chat() -> void:
+	if not is_instance_valid(_chat_input):
+		return
+	RoomClient.send_chat(_chat_input.text)
+	_chat_input.text = ""
+
+
+func _on_chat_received(_line: Dictionary) -> void:
+	_refresh_board()
+
+
+func _on_friends_changed_world(_friends: Array) -> void:
+	if not _inspect_id.is_empty():
+		_open_inspect(_inspect_id)
+
+
+func _classroom_now() -> bool:
+	return SchoolSocial.is_classroom_place(_place)
+
+
+func _refresh_board() -> void:
+	if is_instance_valid(_board_overlay):
+		_board_overlay.queue_free()
+		_board_overlay = null
+	_chat_bar.visible = _classroom_now()
+	if not _classroom_now():
+		return
+	var overlay := Control.new()
+	_board_overlay = overlay
+	overlay.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var map_w: float = float(SchoolLogic.map_size(_place).cols * SchoolLogic.TILE)
+	overlay.position = Vector2(SchoolSocial.BOARD_LEFT, SchoolSocial.BOARD_TOP)
+	overlay.size = Vector2(map_w - SchoolSocial.BOARD_SIDE_PAD * 2.0, SchoolSocial.BOARD_HEIGHT)
+	var bg := ColorRect.new()
+	bg.color = Color("#24382c")
+	bg.set_anchors_preset(Control.PRESET_FULL_RECT)
+	bg.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	overlay.add_child(bg)
+	var lines := VBoxContainer.new()
+	lines.set_anchors_preset(Control.PRESET_FULL_RECT)
+	lines.add_theme_constant_override("separation", 2)
+	overlay.add_child(lines)
+	var visible: Array = SchoolSocial.visible_board(RoomClient.board)
+	if visible.is_empty():
+		var empty := Label.new()
+		empty.text = "黑板还是空的，回车写一句。"
+		empty.add_theme_color_override("font_color", Color("#e8f0c8"))
+		empty.add_theme_font_size_override("font_size", 12)
+		lines.add_child(empty)
+	else:
+		for line in visible:
+			var row := Label.new()
+			row.text = "%s：%s" % [String(line.get("name", "")), String(line.get("text", ""))]
+			row.add_theme_color_override("font_color", Color("#e8f0c8"))
+			row.add_theme_font_size_override("font_size", 12)
+			lines.add_child(row)
+	_map_root.add_child(overlay)
+
+
 func _is_left_click(event: InputEvent) -> bool:
 	return event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT
 
@@ -384,6 +462,8 @@ func _position_pet(pet: Variant, data: Dictionary) -> void:
 func _update_status() -> void:
 	if not _alert.is_empty():
 		_status.text = _alert
+	elif not RoomClient.last_notice.is_empty():
+		_status.text = RoomClient.last_notice
 	elif _place.is_empty():
 		_status.text = "正在走进校门..."
 	else:

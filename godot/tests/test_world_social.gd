@@ -11,6 +11,16 @@ func run() -> int:
 	failed += _check("no visit", not source.contains("去他家"))
 	failed += _check("no gomoku", not source.contains("五子棋"))
 	failed += _check("request friend", source.contains("RoomClient.request_friend"))
+	failed += _check("board empty copy", source.contains("黑板还是空的，回车写一句。"))
+	failed += _check("board hint", source.contains("黑板只有本班听得见"))
+	failed += _check("chat placeholder", source.contains("点这里或按 Enter 写黑板"))
+	failed += _check("send copy", source.contains('"发送"'))
+	failed += _check("no bubble hint", not source.contains("走近才看得到气泡"))
+	failed += _check("chat send", source.contains("RoomClient.send_chat"))
+	failed += _check("focus blocks walk", source.contains("_chat_focused"))
+	var tscn := FileAccess.get_file_as_string("res://windows/world_window.tscn")
+	failed += _check("chat bar scene", tscn.contains("name=\"ChatBar\""))
+	failed += _check("chat input scene", tscn.contains("name=\"ChatInput\""))
 	return failed
 
 
