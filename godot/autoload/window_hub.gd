@@ -103,12 +103,11 @@ func go_to_school() -> void:
 
 func open_friends() -> void:
 	_ensure_room_signals()
+	if not RoomClient.connected:
+		_show_room_status("")
+		RoomClient.pending_enter = ""
+		RoomClient.connect_room(AppState.state.settings.roomUrl)
 	open_panel("friends")
-	if RoomClient.connected:
-		return
-	_show_room_status("")
-	RoomClient.pending_enter = ""
-	RoomClient.connect_room(AppState.state.settings.roomUrl)
 
 
 func show_world(you: Dictionary, people: Array, place_id: String) -> void:

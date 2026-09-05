@@ -26,8 +26,23 @@ func run() -> int:
 	)
 	failed += _check("friends panel kind", source.contains('"friends"'))
 	failed += _check("open friends API", source.contains("func open_friends"))
+	failed += _check(
+		"connect room before opening friends",
+		_open_friends_connects_before_opening(source)
+	)
 	failed += _check("school snapshot gate", source.contains("SchoolSocial.should_open_world"))
 	return failed
+
+
+func _open_friends_connects_before_opening(source: String) -> bool:
+	var start := source.find("func open_friends")
+	if start < 0:
+		return false
+	var nxt := source.find("\nfunc ", start + 1)
+	var body := source.substr(start, nxt - start if nxt > start else source.length() - start)
+	var connect := body.find("connect_room")
+	var open := body.find('open_panel("friends")')
+	return connect >= 0 and open >= 0 and connect < open
 
 
 func _close_world_does_not_disconnect(source: String) -> bool:
