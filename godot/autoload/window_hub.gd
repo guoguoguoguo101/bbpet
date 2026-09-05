@@ -14,6 +14,7 @@ var _world: Window
 
 
 func _ready() -> void:
+	_ensure_room_signals()
 	if DisplayServer.get_name() == "headless":
 		return
 	_setup_tray()
@@ -89,22 +90,10 @@ func go_to_school() -> void:
 		_world.show()
 		_world.grab_focus()
 		return
-	close_panel()
-	var place_id := "school:campus"
-	var spawn := SchoolLogic.default_spawn(place_id)
-	var pet: Dictionary = AppState.state.pet
-	var you := {
-		"clientId": AppState.state.clientId,
-		"name": pet.name,
-		"species": pet.species,
-		"colors": pet.colors.duplicate(true),
-		"x": spawn.x,
-		"y": spawn.y,
-		"facing": "r",
-		"schoolPlaceId": place_id,
-	}
-	show_world(you, [], place_id)
-	RoomClient.enter_place(place_id)
+	_ensure_room_signals()
+	_show_room_status("")
+	RoomClient.connect_room(AppState.state.settings.roomUrl)
+	RoomClient.begin_school_flow()
 
 
 func show_world(you: Dictionary, people: Array, place_id: String) -> void:
@@ -114,6 +103,55 @@ func show_world(you: Dictionary, people: Array, place_id: String) -> void:
 	_world.apply_snapshot(you, people, place_id)
 	_world.popup()
 	_world.grab_focus()
+
+
+func _ensure_room_signals() -> void:
+	if not RoomClient.connect_failed.is_connected(_on_room_connect_failed):
+		RoomClient.connect_failed.connect(_on_room_connect_failed)
+	if not RoomClient.status.is_connected(_on_room_status):
+		RoomClient.status.connect(_on_room_status)
+	if not RoomClient.snapshot_ready.is_connected(_on_room_snapshot):
+		RoomClient.snapshot_ready.connect(_on_room_snapshot)
+	if not RoomClient.others_updated.is_connected(_on_room_others_updated):
+		RoomClient.others_updated.connect(_on_room_others_updated)
+
+
+func _on_room_connect_failed(reason: String) -> void:
+	_show_room_status(reason)
+
+
+func _on_room_status(text: String) -> void:
+	_show_room_status(text)
+
+
+func _on_room_snapshot(you: Dictionary, people: Array, place_id: String) -> void:
+	close_panel()
+	show_world(you, people, place_id)
+
+
+func _on_room_others_updated(people: Array) -> void:
+	if is_instance_valid(_world):
+		_world.apply_others(people)
+
+
+func _show_room_status(text: String) -> void:
+	if is_instance_valid(_world):
+		_world.show_status(text)
+		return
+	if not is_instance_valid(_panel):
+		return
+	var content: VBoxContainer = _panel.get_node_or_null("Margin/Content")
+	if content == null:
+		return
+	var label: Label = content.get_node_or_null("RoomStatus")
+	if label == null:
+		label = Label.new()
+		label.name = "RoomStatus"
+		label.modulate = Color("#b3261e")
+		label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		content.add_child(label)
+		content.move_child(label, 0)
+	label.text = text
 
 
 func close_world() -> void:

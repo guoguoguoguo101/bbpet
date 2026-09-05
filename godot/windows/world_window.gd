@@ -50,6 +50,32 @@ func apply_snapshot(you: Dictionary, people: Array, place_id: String) -> void:
 	for person in people:
 		if person.get("clientId", "") != _you.get("clientId", ""):
 			incoming.append(person.duplicate(true))
+	_apply_incoming_people(incoming)
+
+	_rebuild_map()
+	_sync_pet_nodes()
+	_update_status()
+	_update_camera()
+
+
+func apply_others(people: Array) -> void:
+	if _place.is_empty() or _you.is_empty():
+		return
+	var incoming: Array = []
+	for person in people:
+		if person.get("clientId", "") != _you.get("clientId", ""):
+			incoming.append(person.duplicate(true))
+	_apply_incoming_people(incoming)
+	_sync_pet_nodes()
+	_update_status()
+
+
+func show_status(text: String) -> void:
+	if is_instance_valid(_status):
+		_status.text = text
+
+
+func _apply_incoming_people(incoming: Array) -> void:
 	var visual := PetSync.keep_visual_people(_others, incoming)
 	_others = visual
 	_motions.clear()
@@ -66,11 +92,6 @@ func apply_snapshot(you: Dictionary, people: Array, place_id: String) -> void:
 			"facing": target.get("facing", "r"),
 			"from_at": now,
 		}
-
-	_rebuild_map()
-	_sync_pet_nodes()
-	_update_status()
-	_update_camera()
 
 
 func _physics_process(delta: float) -> void:
