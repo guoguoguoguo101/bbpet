@@ -5,6 +5,7 @@ const PlacePaint = preload("res://school/paint.gd")
 const PetSync = preload("res://school/sync.gd")
 const PixelPetScene = preload("res://pet/pixel_pet.tscn")
 const SchoolLogic = preload("res://school/school_logic.gd")
+const SchoolSocial = preload("res://school/school_social.gd")
 const CAMERA_SCALE := 1.8
 
 @onready var _status: Label = $VBox/Status
@@ -23,6 +24,8 @@ var _last_send_ms := 0
 var _ignore_door_until_ms := 0
 var _was_moving := false
 var _alert := ""
+var _inspect_id := ""
+var _inspect_menu: Control
 
 
 func _ready() -> void:
@@ -37,6 +40,8 @@ func _ready() -> void:
 	)
 	close_requested.connect(WindowHub.close_world)
 	_stage.resized.connect(_update_camera)
+	_stage.gui_input.connect(_on_stage_input)
+	_map_texture.mouse_filter = Control.MOUSE_FILTER_IGNORE
 
 
 func apply_snapshot(you: Dictionary, people: Array, place_id: String) -> void:
@@ -55,6 +60,8 @@ func apply_snapshot(you: Dictionary, people: Array, place_id: String) -> void:
 
 	_rebuild_map()
 	_sync_pet_nodes()
+	if not _has_other(_inspect_id):
+		_close_inspect()
 	_update_status()
 	_update_camera()
 
@@ -68,6 +75,8 @@ func apply_others(people: Array) -> void:
 			incoming.append(person.duplicate(true))
 	_apply_incoming_people(incoming)
 	_sync_pet_nodes()
+	if not _has_other(_inspect_id):
+		_close_inspect()
 	_update_status()
 
 
@@ -246,6 +255,94 @@ func _configure_pet(id: String, data: Dictionary) -> void:
 	pet.pixel_size = 2
 	pet.flip = data.get("facing", "r") == "l"
 	pet.redraw()
+	pet.mouse_filter = Control.MOUSE_FILTER_STOP
+	for conn in pet.gui_input.get_connections():
+		pet.gui_input.disconnect(conn.callable)
+	if id == "self":
+		pet.gui_input.connect(_on_self_pet_input)
+	else:
+		pet.gui_input.connect(_on_other_pet_input.bind(id))
+
+
+func _on_self_pet_input(event: InputEvent) -> void:
+	if _is_left_click(event):
+		_close_inspect()
+
+
+func _on_other_pet_input(event: InputEvent, client_id: String) -> void:
+	if not _is_left_click(event):
+		return
+	_open_inspect(client_id)
+
+
+func _on_stage_input(event: InputEvent) -> void:
+	if not _is_left_click(event):
+		return
+	_close_inspect()
+	var focus := get_viewport().gui_get_focus_owner()
+	if focus:
+		focus.release_focus()
+
+
+func _is_left_click(event: InputEvent) -> bool:
+	return event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT
+
+
+func _open_inspect(client_id: String) -> void:
+	var person: Dictionary = {}
+	for item in _others:
+		if String(item.get("clientId", "")) == client_id:
+			person = item
+			break
+	if person.is_empty():
+		return
+	_inspect_id = client_id
+	if is_instance_valid(_inspect_menu):
+		_inspect_menu.queue_free()
+	var menu := PanelContainer.new()
+	_inspect_menu = menu
+	var box := VBoxContainer.new()
+	menu.add_child(box)
+	var name_label := Label.new()
+	name_label.text = String(person.get("name", ""))
+	box.add_child(name_label)
+	var kind := SchoolSocial.friend_menu_kind(client_id, SchoolSocial.friend_ids(RoomClient.friends))
+	if kind == "already":
+		var already := Button.new()
+		already.text = "已是好友"
+		already.disabled = true
+		box.add_child(already)
+	else:
+		var add := Button.new()
+		add.text = "加好友"
+		add.pressed.connect(func():
+			RoomClient.request_friend(client_id)
+			_close_inspect()
+		)
+		box.add_child(add)
+	var cancel := Button.new()
+	cancel.text = "取消"
+	cancel.pressed.connect(_close_inspect)
+	box.add_child(cancel)
+	_stage.add_child(menu)
+	var screen := _map_root.position + Vector2(float(person.x), float(person.y)) * _map_root.scale
+	menu.position = Vector2(maxi(8, int(screen.x + 36)), maxi(8, int(screen.y)))
+
+
+func _close_inspect() -> void:
+	_inspect_id = ""
+	if is_instance_valid(_inspect_menu):
+		_inspect_menu.queue_free()
+	_inspect_menu = null
+
+
+func _has_other(client_id: String) -> bool:
+	if client_id.is_empty():
+		return true
+	for person in _others:
+		if String(person.get("clientId", "")) == client_id:
+			return true
+	return false
 
 
 func _interpolate_others() -> void:
