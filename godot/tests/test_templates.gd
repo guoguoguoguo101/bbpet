@@ -32,8 +32,14 @@ func run() -> int:
 		failed += _check("%s idle dimensions" % species, _is_16_square(idle))
 		failed += _check("%s blink dimensions" % species, _is_16_square(blink))
 		failed += _check("%s blink differs" % species, blink != idle)
-	var fallback: PackedStringArray = PetTemplates.get_frame("blob", "wave")
-	failed += _check("unknown pose falls back to idle", fallback == PetTemplates.get_frame("blob", "idle"))
+	for pose in ["talk", "drink", "sleep", "wake", "wave", "peek"]:
+		var frame: PackedStringArray = PetTemplates.get_frame("blob", pose)
+		failed += _check("blob %s 16" % pose, _is_16_square(frame))
+		failed += _check("blob %s differs idle" % pose, frame != PetTemplates.get_frame("blob", "idle"))
+	failed += _check(
+		"unknown pose falls back to idle",
+		PetTemplates.get_frame("blob", "dance") == PetTemplates.get_frame("blob", "idle")
+	)
 	failed += _check(
 		"unknown species falls back to blob",
 		PetTemplates.get_frame("dragon", "idle") == PetTemplates.get_frame("blob", "idle")
