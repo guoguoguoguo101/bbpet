@@ -4,10 +4,12 @@ const PANEL_SIZES := {
 	"wizard": Vector2i(340, 520),
 	"hub": Vector2i(300, 430),
 	"settings": Vector2i(340, 640),
+	"friends": Vector2i(300, 480),
 }
 const STATE_PATH := "user://bbpet-state.json"
 const PixelPetScene = preload("res://pet/pixel_pet.tscn")
 const PET_TEMPLATES = preload("res://pet/templates.gd")
+const SchoolSocial = preload("res://school/school_social.gd")
 
 @onready var content: VBoxContainer = $Margin/Content
 
@@ -33,6 +35,8 @@ func show_kind(kind: String) -> void:
 			_build_hub()
 		"settings":
 			_build_settings()
+		"friends":
+			_build_friends()
 
 
 func _clear_content() -> void:
@@ -83,11 +87,109 @@ func _build_hub() -> void:
 	school.text = "去上学"
 	school.pressed.connect(_go_to_school)
 	content.add_child(school)
+	var friends := Button.new()
+	friends.name = "Friends"
+	friends.text = "好友"
+	friends.pressed.connect(_open_friends)
+	content.add_child(friends)
 	var settings := Button.new()
 	settings.name = "Settings"
 	settings.text = "设置"
 	settings.pressed.connect(_open_settings)
 	content.add_child(settings)
+
+
+func _build_friends() -> void:
+	title = "好友"
+	var status := Label.new()
+	status.name = "RoomStatus"
+	status.modulate = Color("#b3261e")
+	status.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	status.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	content.add_child(status)
+	var notice := Label.new()
+	notice.name = "Notice"
+	notice.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	content.add_child(notice)
+	var empty := Label.new()
+	empty.name = "Empty"
+	empty.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	empty.text = "去学校点别的同学，点「加好友」就会出现在这里。"
+	content.add_child(empty)
+	var list := VBoxContainer.new()
+	list.name = "List"
+	content.add_child(list)
+	_refresh_friends()
+	var room := _room_client_or_null()
+	if room:
+		if not room.friends_changed.is_connected(_on_friends_changed):
+			room.friends_changed.connect(_on_friends_changed)
+		if not room.status.is_connected(_on_friends_status):
+			room.status.connect(_on_friends_status)
+		if not room.connect_failed.is_connected(_on_friends_status):
+			room.connect_failed.connect(_on_friends_status)
+		if not room.disconnected.is_connected(_on_friends_disconnected):
+			room.disconnected.connect(_on_friends_disconnected)
+
+
+func _on_friends_changed(_friends: Array) -> void:
+	_refresh_friends()
+
+
+func _on_friends_status(_text: String) -> void:
+	_refresh_friends()
+
+
+func _on_friends_disconnected() -> void:
+	_refresh_friends()
+
+
+func _refresh_friends() -> void:
+	var status: Label = content.get_node_or_null("RoomStatus")
+	var notice: Label = content.get_node_or_null("Notice")
+	var empty: Label = content.get_node_or_null("Empty")
+	var list: VBoxContainer = content.get_node_or_null("List")
+	if status == null or empty == null or list == null or notice == null:
+		return
+	for child in list.get_children():
+		child.free()
+	var room := _room_client_or_null()
+	var cards: Array = room.friends if room else []
+	var connected: bool = room.connected if room else false
+	var connecting: bool = room.connecting if room else false
+	status.text = ""
+	if room:
+		if not connected and connecting:
+			status.text = "正在连学校..."
+		elif not connected and not room.status_text.is_empty():
+			status.text = room.status_text
+		elif not connected:
+			status.text = "连不上学校"
+	notice.text = room.last_notice if room else ""
+	empty.visible = cards.is_empty()
+	if cards.is_empty():
+		empty.text = "去学校点别的同学，点「加好友」就会出现在这里。"
+		return
+	for card in cards:
+		if not card is Dictionary:
+			continue
+		var row := HBoxContainer.new()
+		var preview: TextureRect = PixelPetScene.instantiate()
+		preview.species = String(card.get("species", "blob"))
+		preview.colors = PET_TEMPLATES.colors_for(preview.species, card.get("colors", {}))
+		preview.pixel_size = 2
+		preview.pose = "idle"
+		row.add_child(preview)
+		preview.redraw()
+		var meta := VBoxContainer.new()
+		var name_label := Label.new()
+		name_label.text = String(card.get("name", ""))
+		meta.add_child(name_label)
+		var state_label := Label.new()
+		state_label.text = SchoolSocial.friend_status_text(card)
+		meta.add_child(state_label)
+		row.add_child(meta)
+		list.add_child(row)
 
 
 func _build_settings() -> void:
@@ -147,6 +249,10 @@ func _go_to_school() -> void:
 	_window_hub().go_to_school()
 
 
+func _open_friends() -> void:
+	_window_hub().open_friends()
+
+
 func _open_settings() -> void:
 	_window_hub().open_panel("settings")
 
@@ -180,8 +286,9 @@ func _save_settings(
 	_app_state().save_to(STATE_PATH)
 	_window_hub().refresh_pet()
 	var room_client := _room_client()
-	if room_client.has_method("disconnect_room") and room_client.connected:
+	if room_client.connected:
 		_window_hub().close_world()
+		room_client.disconnect_room()
 	_window_hub().close_panel()
 
 
@@ -204,6 +311,12 @@ func _state() -> Dictionary:
 
 func _room_client() -> Node:
 	return get_node("/root/RoomClient")
+
+
+func _room_client_or_null() -> Node:
+	if not is_inside_tree():
+		return null
+	return get_node_or_null("/root/RoomClient")
 
 
 func _window_hub() -> Node:
