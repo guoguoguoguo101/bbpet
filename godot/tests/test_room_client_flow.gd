@@ -1,36 +1,78 @@
 extends RefCounted
 
 const ROOM_CLIENT_SCRIPT = preload("res://autoload/room_client.gd")
+const SchoolSocial = preload("res://school/school_social.gd")
 
 
 func run() -> int:
 	var failed := 0
 	var rc: Node = ROOM_CLIENT_SCRIPT.new()
-	if not rc.has_signal("snapshot_ready") or not rc.has_method("begin_school_flow"):
+	if not rc.has_method("leave_school") or not rc.has_method("send_chat") or not rc.has_method("request_friend"):
 		rc.free()
-		return _check("school flow API", false)
+		return _check("social API", false)
 	rc.disconnect_room()
-	var saw := {"campus": false}
-	var on_snap := func(_you, _people, place_id):
+	var saw := {"campus": false, "home": false, "friends": 0, "chats": 0}
+	rc.snapshot_ready.connect(func(_you, _people, place_id):
 		if place_id == "school:campus":
 			saw.campus = true
-	rc.snapshot_ready.connect(on_snap)
+		if str(place_id).begins_with("home:"):
+			saw.home = true
+	)
+	rc.friends_changed.connect(func(friends):
+		saw.friends = friends.size()
+	)
+	rc.chat_received.connect(func(_line):
+		saw.chats += 1
+	)
 	rc.begin_school_flow()
 	rc._handle_server_text(
-		'{"type":"welcome","you":{"clientId":"x","placeId":"home:x","x":0,"y":0}}'
+		'{"type":"welcome","you":{"clientId":"x","placeId":"home:x","x":0,"y":0},'
+		+ '"home":{"placeId":"home:x","friends":[{"clientId":"y","name":"乙","online":true}],"incoming":[]}}'
 	)
 	failed += _check("queued enter", rc.last_enter_requested == "school:campus")
+	failed += _check("welcome friends", saw.friends == 1 and rc.is_friend("y"))
+	rc.connected = true
 	rc._handle_server_text(
 		'{"type":"snapshot","you":{"clientId":"x","x":384,"y":348,"facing":"r",'
 		+ '"species":"blob","name":"豆豆","colors":{}},'
-		+ '"snapshot":{"placeId":"school:campus","people":[]}}'
+		+ '"snapshot":{"placeId":"school:campus","people":[],"board":[],"friends":[{"clientId":"y","name":"乙","online":true}]}}'
 	)
 	failed += _check("campus snapshot", saw.campus)
-	rc._handle_server_text('{"type":"chat","line":{"text":"hi"}}')
-	failed += _check("ignored chat", rc.status_text.find("hi") == -1)
+	rc.leave_school()
+	failed += _check("leave away", rc.last_enter_requested == "away")
+	failed += _check("still connected", rc.connected == true)
+	failed += _check("friends kept", rc.is_friend("y"))
+	rc._handle_server_text(
+		'{"type":"snapshot","you":{"clientId":"x","placeId":"home:x"},'
+		+ '"snapshot":{"placeId":"home:x","people":[],"board":[],"friends":[{"clientId":"y","name":"乙","online":true}]}}'
+	)
+	failed += _check("home snapshot emitted", saw.home)
+	failed += _check("home must not open world", SchoolSocial.should_open_world("home:x") == false)
+	rc._handle_server_text(
+		'{"type":"snapshot","you":{"clientId":"x","x":40,"y":40,"name":"豆豆"},'
+		+ '"snapshot":{"placeId":"school:class-1","people":[],"board":['
+		+ '{"id":"old","clientId":"z","name":"丙","text":"先写的","placeId":"school:class-1"}]}}'
+	)
+	failed += _check("snapshot board", rc.board.size() == 1)
+	rc._handle_server_text(
+		'{"type":"chat","line":{"id":"n1","clientId":"y","name":"乙","text":"你好","kind":"board","placeId":"school:class-1"}}'
+	)
+	failed += _check("same-class chat", saw.chats == 1 and rc.board.size() == 2)
+	rc._handle_server_text(
+		'{"type":"chat","line":{"id":"n2","clientId":"z","name":"丁","text":"隔壁","kind":"board","placeId":"school:class-2"}}'
+	)
+	failed += _check("other-class dropped", saw.chats == 1 and rc.board.size() == 2)
+	rc.send_chat("  黑板字  ")
+	failed += _check("send chat payload", rc.last_sent.type == "chat" and rc.last_sent.text == "黑板字" and rc.last_sent.placeId == "school:class-1")
+	failed += _check("no optimistic board", rc.board.size() == 2)
+	rc.request_friend("y")
+	failed += _check("friend request", rc.last_sent.type == "friendRequest" and rc.last_sent.targetId == "y")
+	rc._handle_server_text('{"type":"friends","friends":[{"clientId":"y","name":"乙","online":true}],"incoming":[{"clientId":"z"}]}')
+	failed += _check("incoming stored unused", rc.incoming.size() == 1)
+	rc._handle_server_text('{"type":"notice","text":"已添加 乙"}')
+	failed += _check("last notice", rc.last_notice.contains("已添加"))
 	rc._handle_server_text('{"type":"error","message":"学校人满了"}')
 	failed += _check("error text", rc.status_text.contains("学校人满了"))
-	rc.snapshot_ready.disconnect(on_snap)
 	rc.free()
 	return failed
 

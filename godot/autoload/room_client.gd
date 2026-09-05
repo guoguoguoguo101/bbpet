@@ -5,22 +5,32 @@ signal status(text: String)
 signal snapshot_ready(you: Dictionary, people: Array, place_id: String)
 signal others_updated(people: Array)
 signal disconnected
+signal chat_received(line: Dictionary)
+signal friends_changed(friends: Array)
 
 const RoomMessages = preload("res://net/room_messages.gd")
+const SchoolSocial = preload("res://school/school_social.gd")
+const SchoolLogic = preload("res://school/school_logic.gd")
 const SCHOOL_CAMPUS := "school:campus"
 
 var connected := false
 var status_text := ""
 var pending_enter := ""
 var last_enter_requested := ""
+var friends: Array = []
+var incoming: Array = []
+var board: Array = []
+var last_notice := ""
+var last_sent: Dictionary = {}
+var place_id := ""
+var connecting := false
+var _url := ""
 
 var _peer: WebSocketPeer
 var _was_open := false
-var _connecting := false
 var _intentional_disconnect := false
 var _you: Dictionary = {}
 var _people: Array = []
-var _place_id := ""
 var _has_last_move := false
 var _last_move := Vector2.ZERO
 var _last_facing := ""
@@ -34,7 +44,7 @@ func _process(_delta: float) -> void:
 	if state == WebSocketPeer.STATE_OPEN:
 		if not _was_open:
 			_was_open = true
-			_connecting = false
+			connecting = false
 			connected = true
 			_send({
 				"type": "hello",
@@ -50,6 +60,8 @@ func _process(_delta: float) -> void:
 
 
 func connect_room(url: String) -> void:
+	if connected and _url == url:
+		return
 	disconnect_room()
 	if url.is_empty():
 		status_text = "连不上学校"
@@ -57,11 +69,13 @@ func connect_room(url: String) -> void:
 		return
 	_peer = WebSocketPeer.new()
 	_intentional_disconnect = false
-	_connecting = true
+	connecting = true
+	_url = url
 	var result := _peer.connect_to_url(url)
 	if result != OK:
 		_peer = null
-		_connecting = false
+		connecting = false
+		_url = ""
 		status_text = "连不上学校"
 		connect_failed.emit(status_text)
 
@@ -74,16 +88,44 @@ func disconnect_room() -> void:
 			_peer.close()
 	_peer = null
 	connected = false
-	_connecting = false
+	connecting = false
 	_was_open = false
 	pending_enter = ""
-	_place_id = ""
+	place_id = ""
 	_people.clear()
+	board.clear()
+	_url = ""
 	_has_last_move = false
 
 
 func begin_school_flow() -> void:
 	pending_enter = SCHOOL_CAMPUS
+
+
+func send_chat(text: String) -> void:
+	var cleaned := SchoolSocial.sanitize_chat(text)
+	if cleaned.is_empty() or not connected:
+		return
+	var place: Dictionary = SchoolLogic.PLACES.get(place_id, {})
+	if not SchoolSocial.is_classroom_place(place):
+		return
+	_send({"type": "chat", "text": cleaned, "placeId": place_id})
+
+
+func request_friend(target_id: String) -> void:
+	if not connected or target_id.is_empty():
+		return
+	_send({"type": "friendRequest", "targetId": target_id})
+
+
+func leave_school() -> void:
+	if not connected:
+		return
+	enter_place("away")
+
+
+func is_friend(client_id: String) -> bool:
+	return SchoolSocial.friend_ids(friends).has(client_id)
 
 
 func send_move(x: float, y: float, facing: String) -> void:
@@ -114,45 +156,52 @@ func _handle_server_text(text: String) -> void:
 	match kind:
 		"welcome":
 			_you = msg.get("you", {}).duplicate(true)
+			_apply_friends(msg.get("home", {}))
 			if not pending_enter.is_empty():
 				enter_place(pending_enter)
 		"snapshot":
 			var snapshot: Dictionary = msg.get("snapshot", {})
-			var place_id := String(snapshot.get("placeId", ""))
 			var people: Array = snapshot.get("people", [])
 			_you = msg.get("you", {}).duplicate(true)
-			_place_id = place_id
+			place_id = String(snapshot.get("placeId", ""))
 			_people = _without_self(people)
+			_apply_friends(snapshot)
+			_apply_board(snapshot)
 			if pending_enter == place_id:
 				pending_enter = ""
 			snapshot_ready.emit(_you.duplicate(true), _people.duplicate(true), place_id)
 		"join":
-			if String(msg.get("placeId", "")) == _place_id:
+			if String(msg.get("placeId", "")) == place_id:
 				_upsert_person(msg.get("person", {}))
 		"leave":
-			if String(msg.get("placeId", "")) == _place_id:
+			if String(msg.get("placeId", "")) == place_id:
 				_remove_person(String(msg.get("clientId", "")))
 		"move":
 			_apply_move(msg)
 		"poses":
-			if String(msg.get("placeId", "")) == _place_id:
+			if String(msg.get("placeId", "")) == place_id:
 				var items: Array = msg.get("items", [])
 				for item in items:
 					if item is Dictionary:
 						_apply_pose_item(item)
 				others_updated.emit(_people.duplicate(true))
+		"friends":
+			_apply_friends(msg)
+		"chat":
+			_apply_chat(msg.get("line", {}))
 		"error", "notice":
 			var raw := String(msg.get("message", msg.get("text", "")))
 			status_text = raw.replace("\r", " ").replace("\n", " ").substr(0, 80)
+			last_notice = status_text
 			status.emit(status_text)
 
 
 func _handle_closed() -> void:
 	var opened := _was_open
-	var was_connecting := _connecting
+	var was_connecting := connecting
 	_peer = null
 	connected = false
-	_connecting = false
+	connecting = false
 	_was_open = false
 	if _intentional_disconnect:
 		return
@@ -166,9 +215,47 @@ func _handle_closed() -> void:
 
 
 func _send(message: Dictionary) -> void:
+	last_sent = message.duplicate(true)
 	if _peer == null or _peer.get_ready_state() != WebSocketPeer.STATE_OPEN:
 		return
 	_peer.send_text(JSON.stringify(message))
+
+
+func _apply_friends(source: Dictionary) -> void:
+	var next: Array = source.get("friends", [])
+	friends = []
+	for card in next:
+		if card is Dictionary:
+			friends.append(card.duplicate(true))
+	incoming = []
+	var raw_in: Array = source.get("incoming", [])
+	for card in raw_in:
+		if card is Dictionary:
+			incoming.append(card.duplicate(true))
+	friends_changed.emit(friends.duplicate(true))
+
+
+func _apply_board(snapshot: Dictionary) -> void:
+	board = []
+	var place: Dictionary = SchoolLogic.PLACES.get(place_id, {})
+	if not SchoolSocial.is_classroom_place(place):
+		return
+	var raw: Array = snapshot.get("board", [])
+	for line in raw:
+		if line is Dictionary:
+			board = SchoolSocial.append_board(board, line)
+
+
+func _apply_chat(line: Dictionary) -> void:
+	if line.is_empty():
+		return
+	if String(line.get("placeId", "")) != place_id:
+		return
+	var place: Dictionary = SchoolLogic.PLACES.get(place_id, {})
+	if not SchoolSocial.is_classroom_place(place):
+		return
+	board = SchoolSocial.append_board(board, line)
+	chat_received.emit(line.duplicate(true))
 
 
 func _without_self(people: Array) -> Array:
