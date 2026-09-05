@@ -1,0 +1,27 @@
+; Engine configuration file.
+config_version=5
+
+[application]
+config/name="bbpet"
+config/version="1.0.0"
+run/main_scene="res://windows/pet_root.tscn"
+config/features=PackedStringArray("4.4", "GL Compatibility")
+boot_splash/show_image=false
+
+[autoload]
+AppState="*res://autoload/app_state.gd"
+RoomClient="*res://autoload/room_client.gd"
+WindowHub="*res://autoload/window_hub.gd"
+
+[display]
+window/size/viewport_width=64
+window/size/viewport_height=86
+window/size/resizable=false
+window/size/borderless=true
+window/size/always_on_top=true
+window/size/transparent=true
+window/per_pixel_transparency/allowed=true
+
+[rendering]
+renderer/rendering_method="gl_compatibility"
+viewport/transparent_background=true

@@ -8,3 +8,5 @@ bbpet-friends.json
 .bbpet-pet2/
 .DS_Store
 Thumbs.db
+godot/.godot/
+godot/export/
