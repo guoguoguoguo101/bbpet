@@ -5,6 +5,7 @@ signal panel_toggled
 const PANEL_SCENE = preload("res://windows/panel_window.tscn")
 const WORLD_SCENE = preload("res://windows/world_window.tscn")
 const SchoolSocial = preload("res://school/school_social.gd")
+const HomeLogic = preload("res://home/home_logic.gd")
 const MENU_SHOW := 1
 const MENU_HIDE := 2
 const MENU_QUIT := 3
@@ -99,6 +100,19 @@ func go_to_school() -> void:
 		return
 	RoomClient.connect_room(AppState.state.settings.roomUrl)
 	RoomClient.begin_school_flow()
+
+
+func go_home(owner_id: String = "") -> void:
+	close_panel()
+	_ensure_room_signals()
+	var target := owner_id
+	if target.is_empty():
+		target = AppState.state.clientId
+	if RoomClient.connected:
+		RoomClient.go_home(target)
+		return
+	RoomClient.pending_enter = HomeLogic.home_place_id(target)
+	RoomClient.connect_room(AppState.state.settings.roomUrl)
 
 
 func open_friends() -> void:

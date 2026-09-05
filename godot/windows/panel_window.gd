@@ -10,6 +10,7 @@ const STATE_PATH := "user://bbpet-state.json"
 const PixelPetScene = preload("res://pet/pixel_pet.tscn")
 const PET_TEMPLATES = preload("res://pet/templates.gd")
 const SchoolSocial = preload("res://school/school_social.gd")
+const HomeLogic = preload("res://home/home_logic.gd")
 
 @onready var content: VBoxContainer = $Margin/Content
 
@@ -87,6 +88,11 @@ func _build_hub() -> void:
 	school.text = "去上学"
 	school.pressed.connect(_go_to_school)
 	content.add_child(school)
+	var home := Button.new()
+	home.name = "Home"
+	home.text = "回家"
+	home.pressed.connect(_go_home)
+	content.add_child(home)
 	var friends := Button.new()
 	friends.name = "Friends"
 	friends.text = "好友"
@@ -189,6 +195,12 @@ func _refresh_friends() -> void:
 		state_label.text = SchoolSocial.friend_status_text(card)
 		meta.add_child(state_label)
 		row.add_child(meta)
+		var visit := Button.new()
+		var at_home := HomeLogic.is_friend_at_home(card)
+		visit.text = "进他家" if at_home else "不在家"
+		visit.disabled = not at_home
+		visit.pressed.connect(_go_home.bind(String(card.get("clientId", ""))))
+		row.add_child(visit)
 		list.add_child(row)
 
 
@@ -247,6 +259,10 @@ func _select_species(species: String) -> void:
 
 func _go_to_school() -> void:
 	_window_hub().go_to_school()
+
+
+func _go_home(owner_id: String = "") -> void:
+	_window_hub().go_home(owner_id)
 
 
 func _open_friends() -> void:

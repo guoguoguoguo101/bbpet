@@ -26,6 +26,7 @@ func run() -> int:
 	failed += _check("discard world on quit", source.contains("func discard_world"))
 	failed += _check("friends panel kind", source.contains('"friends"'))
 	failed += _check("open friends API", source.contains("func open_friends"))
+	failed += _check("go home API", source.contains("func go_home"))
 	failed += _check(
 		"connect room before opening friends",
 		_open_friends_connects_before_opening(source)

@@ -25,10 +25,13 @@ func run() -> int:
 	failed += _check("hub size", panel.size == Vector2i(300, 430))
 	failed += _check("hub preview", panel.has_node("Margin/Content/Preview"))
 	failed += _check("hub school", panel.get_node("Margin/Content/School").text == "去上学")
+	failed += _check("hub home", panel.get_node("Margin/Content/Home").text == "回家")
 	failed += _check("hub friends", panel.get_node("Margin/Content/Friends").text == "好友")
 	failed += _check(
 		"hub button order",
 		panel.get_node("Margin/Content/School").get_index()
+		< panel.get_node("Margin/Content/Home").get_index()
+		and panel.get_node("Margin/Content/Home").get_index()
 		< panel.get_node("Margin/Content/Friends").get_index()
 		and panel.get_node("Margin/Content/Friends").get_index()
 		< panel.get_node("Margin/Content/Settings").get_index()
@@ -49,6 +52,7 @@ func run() -> int:
 	failed += _check("friends title", panel.title == "好友")
 	failed += _check("friends empty hint", panel.get_node("Margin/Content/Empty").text == "去学校点别的同学，点「加好友」就会出现在这里。")
 	failed += _check("no visit button", panel.get_node_or_null("Margin/Content/Visit") == null)
+	failed += _check("visit copy in source", FileAccess.get_file_as_string("res://windows/panel_window.gd").contains("进他家"))
 
 	panel.free()
 	return failed
