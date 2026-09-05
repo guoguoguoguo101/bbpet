@@ -7,6 +7,12 @@ func run() -> int:
 	var failed := 0
 	failed += _check("collapse spaces", SchoolSocial.sanitize_chat("  a   b  ") == "a b")
 	failed += _check("empty whitespace", SchoolSocial.sanitize_chat(" \n\t ") == "")
+	var vt := char(0x000B)
+	var ff := char(0x000C)
+	failed += _check(
+		"collapse unicode whitespace",
+		SchoolSocial.sanitize_chat("  a %s%s b  " % [vt, ff]) == "a b"
+	)
 	var long := ""
 	for _i in 90:
 		long += "字"

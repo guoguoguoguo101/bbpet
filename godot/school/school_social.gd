@@ -10,18 +10,9 @@ const BOARD_SIDE_PAD := 32.0
 
 
 static func sanitize_chat(text: String) -> String:
-	var collapsed := ""
-	var in_space := false
-	for i in text.length():
-		var ch := text.substr(i, 1)
-		if ch == " " or ch == "\t" or ch == "\n" or ch == "\r":
-			if not in_space:
-				collapsed += " "
-				in_space = true
-		else:
-			collapsed += ch
-			in_space = false
-	return collapsed.strip_edges().substr(0, 80)
+	var regex := RegEx.new()
+	regex.compile("\\s+")
+	return regex.sub(text, " ", true).strip_edges().substr(0, 80)
 
 
 static func append_board(board: Array, line: Dictionary) -> Array:
