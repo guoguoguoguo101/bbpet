@@ -4,6 +4,7 @@ signal panel_toggled
 
 const PANEL_SCENE = preload("res://windows/panel_window.tscn")
 const WORLD_SCENE = preload("res://windows/world_window.tscn")
+const SchoolSocial = preload("res://school/school_social.gd")
 const MENU_SHOW := 1
 const MENU_HIDE := 2
 const MENU_QUIT := 3
@@ -61,7 +62,7 @@ func toggle_panel() -> void:
 
 
 func open_panel(kind: String) -> void:
-	if not ["wizard", "hub", "settings"].has(kind):
+	if not ["wizard", "hub", "settings", "friends"].has(kind):
 		push_error("Unknown panel kind: %s" % kind)
 		return
 	close_panel()
@@ -86,15 +87,28 @@ func panel_is_open() -> bool:
 
 
 func go_to_school() -> void:
-	if is_instance_valid(_world):
+	_ensure_room_signals()
+	if is_instance_valid(_world) and RoomClient.connected and SchoolSocial.should_open_world(RoomClient.place_id):
 		_world.show()
 		_world.grab_focus()
-		if RoomClient.connected:
-			return
-	_ensure_room_signals()
+		return
 	_show_room_status("")
+	if RoomClient.connected:
+		RoomClient.begin_school_flow()
+		RoomClient.enter_place(RoomClient.SCHOOL_CAMPUS)
+		return
 	RoomClient.connect_room(AppState.state.settings.roomUrl)
 	RoomClient.begin_school_flow()
+
+
+func open_friends() -> void:
+	_ensure_room_signals()
+	open_panel("friends")
+	if RoomClient.connected:
+		return
+	_show_room_status("")
+	RoomClient.pending_enter = ""
+	RoomClient.connect_room(AppState.state.settings.roomUrl)
 
 
 func show_world(you: Dictionary, people: Array, place_id: String) -> void:
@@ -126,6 +140,8 @@ func _on_room_status(text: String) -> void:
 
 
 func _on_room_snapshot(you: Dictionary, people: Array, place_id: String) -> void:
+	if not SchoolSocial.should_open_world(place_id):
+		return
 	close_panel()
 	show_world(you, people, place_id)
 
@@ -161,7 +177,7 @@ func close_world() -> void:
 		_world.hide()
 		_world.queue_free()
 		_world = null
-	RoomClient.disconnect_room()
+	RoomClient.leave_school()
 
 
 func refresh_pet() -> void:
