@@ -3,12 +3,14 @@ extends Node
 signal panel_toggled
 
 const PANEL_SCENE = preload("res://windows/panel_window.tscn")
+const WORLD_SCENE = preload("res://windows/world_window.tscn")
 const MENU_SHOW := 1
 const MENU_HIDE := 2
 const MENU_QUIT := 3
 
 var _has_tray := false
 var _panel: Window
+var _world: Window
 
 
 func _ready() -> void:
@@ -83,12 +85,44 @@ func panel_is_open() -> bool:
 
 
 func go_to_school() -> void:
-	push_warning("go_to_school")
+	if is_instance_valid(_world):
+		_world.show()
+		_world.grab_focus()
+		return
+	close_panel()
+	var place_id := "school:campus"
+	var spawn := SchoolLogic.default_spawn(place_id)
+	var pet: Dictionary = AppState.state.pet
+	var you := {
+		"clientId": AppState.state.clientId,
+		"name": pet.name,
+		"species": pet.species,
+		"colors": pet.colors.duplicate(true),
+		"x": spawn.x,
+		"y": spawn.y,
+		"facing": "r",
+		"schoolPlaceId": place_id,
+	}
+	show_world(you, [], place_id)
+	RoomClient.enter_place(place_id)
+
+
+func show_world(you: Dictionary, people: Array, place_id: String) -> void:
+	if not is_instance_valid(_world):
+		_world = WORLD_SCENE.instantiate()
+		add_child(_world)
+	_world.apply_snapshot(you, people, place_id)
+	_world.popup()
+	_world.grab_focus()
 
 
 func close_world() -> void:
-	if RoomClient.has_method("disconnect_room"):
-		RoomClient.disconnect_room()
+	if is_instance_valid(_world):
+		AppState.save_world_size(_world.size.x, _world.size.y)
+		_world.hide()
+		_world.queue_free()
+		_world = null
+	RoomClient.disconnect_room()
 
 
 func refresh_pet() -> void:

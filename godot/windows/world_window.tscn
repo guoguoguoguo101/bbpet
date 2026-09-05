@@ -1,0 +1,50 @@
+[gd_scene load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://windows/world_window.gd" id="1_world"]
+
+[node name="WorldWindow" type="Window"]
+title = "学校"
+initial_position = 1
+size = Vector2i(820, 560)
+min_size = Vector2i(520, 380)
+transparent = false
+always_on_top = false
+script = ExtResource("1_world")
+
+[node name="Background" type="ColorRect" parent="."]
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+color = Color(1, 0.972549, 0.94902, 1)
+mouse_filter = 2
+
+[node name="VBox" type="VBoxContainer" parent="."]
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_constants/separation = 0
+
+[node name="Status" type="Label" parent="VBox"]
+custom_minimum_size = Vector2(0, 38)
+layout_mode = 2
+theme_override_colors/font_color = Color(0.239216, 0.172549, 0.160784, 1)
+theme_override_font_sizes/font_size = 16
+text = "正在走进校门..."
+horizontal_alignment = 1
+vertical_alignment = 1
+
+[node name="Stage" type="Control" parent="VBox"]
+clip_contents = true
+layout_mode = 2
+size_flags_vertical = 3
+
+[node name="MapRoot" type="Node2D" parent="VBox/Stage"]
+
+[node name="Map" type="TextureRect" parent="VBox/Stage/MapRoot"]
+texture_filter = 1
+expand_mode = 1
+stretch_mode = 0
