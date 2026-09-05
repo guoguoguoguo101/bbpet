@@ -4,6 +4,8 @@ const REQUIRED_LINES := [
 	'config/name="bbpet"',
 	"window/size/viewport_width=64",
 	"window/size/viewport_height=86",
+	"window/size/transparent=true",
+	"window/per_pixel_transparency/allowed=true",
 ]
 
 func run() -> int:
