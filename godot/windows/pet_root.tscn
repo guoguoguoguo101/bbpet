@@ -1,6 +1,7 @@
-[gd_scene load_steps=2 format=3 uid="uid://bbpetpetroot"]
+[gd_scene load_steps=3 format=3 uid="uid://bbpetpetroot"]
 
 [ext_resource type="Script" path="res://windows/pet_root.gd" id="1_pet"]
+[ext_resource type="PackedScene" path="res://pet/pixel_pet.tscn" id="2_pixel_pet"]
 
 [node name="PetRoot" type="Control"]
 layout_mode = 3
@@ -8,3 +9,13 @@ anchors_preset = 15
 anchor_right = 1.0
 anchor_bottom = 1.0
 script = ExtResource("1_pet")
+
+[node name="PixelPet" parent="." instance=ExtResource("2_pixel_pet")]
+layout_mode = 0
+offset_top = 11.0
+offset_right = 64.0
+offset_bottom = 75.0
+mouse_filter = 2
+pixel_size = 4
+
+[node name="ContextMenu" type="PopupMenu" parent="."]
