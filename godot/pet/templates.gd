@@ -144,11 +144,20 @@ static func pad_row(row: String) -> String:
 	return (row + "................").substr(0, 16)
 
 static func get_frame(species: String, pose: String) -> PackedStringArray:
+	var selected_species := species if FRAMES.has(species) else "blob"
 	var selected_pose := pose if pose == "blink" else "idle"
 	var frame := PackedStringArray()
-	for row in FRAMES[species][selected_pose]:
+	for row in FRAMES[selected_species][selected_pose]:
 		frame.append(pad_row(row))
 	return frame
+
+static func colors_for(species: String, colors: Dictionary) -> Dictionary:
+	var selected_species := species if DEFAULT_COLORS.has(species) else "blob"
+	var result: Dictionary = DEFAULT_COLORS[selected_species].duplicate(true)
+	for key in result:
+		if colors.has(key) and colors[key] is String:
+			result[key] = colors[key]
+	return result
 
 static func paint_image(frame: PackedStringArray, colors: Dictionary, pixel_size: int) -> Image:
 	var image := Image.create(16 * pixel_size, 16 * pixel_size, false, Image.FORMAT_RGBA8)

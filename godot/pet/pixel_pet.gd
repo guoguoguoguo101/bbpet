@@ -18,7 +18,8 @@ func _init() -> void:
 
 func redraw() -> void:
 	var frame := PetTemplates.get_frame(species, pose)
-	_image = PetTemplates.paint_image(frame, colors, pixel_size)
+	var safe_colors := PetTemplates.colors_for(species, colors)
+	_image = PetTemplates.paint_image(frame, safe_colors, pixel_size)
 	texture = ImageTexture.create_from_image(_image)
 	flip_h = flip
 	var control_size := Vector2(16 * pixel_size, 16 * pixel_size)

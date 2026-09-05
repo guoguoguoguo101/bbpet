@@ -34,6 +34,16 @@ func run() -> int:
 		failed += _check("%s blink differs" % species, blink != idle)
 	var fallback: PackedStringArray = PetTemplates.get_frame("blob", "wave")
 	failed += _check("unknown pose falls back to idle", fallback == PetTemplates.get_frame("blob", "idle"))
+	failed += _check(
+		"unknown species falls back to blob",
+		PetTemplates.get_frame("dragon", "idle") == PetTemplates.get_frame("blob", "idle")
+	)
+	var partial_colors := PetTemplates.colors_for("cat", {"body": "#000000"})
+	failed += _check("custom body color kept", partial_colors.body == "#000000")
+	failed += _check(
+		"missing classmate colors use defaults",
+		partial_colors.outline == PetTemplates.DEFAULT_COLORS["cat"].outline
+	)
 	var frame: PackedStringArray = PetTemplates.get_frame("blob", "idle")
 	var image: Image = PetTemplates.paint_image(frame, PetTemplates.DEFAULT_COLORS["blob"], 4)
 	failed += _check("paint size", image.get_width() == 64 and image.get_height() == 64)

@@ -89,7 +89,8 @@ func go_to_school() -> void:
 	if is_instance_valid(_world):
 		_world.show()
 		_world.grab_focus()
-		return
+		if RoomClient.connected:
+			return
 	_ensure_room_signals()
 	_show_room_status("")
 	RoomClient.connect_room(AppState.state.settings.roomUrl)
@@ -173,6 +174,8 @@ func refresh_pet() -> void:
 	pet.species = AppState.state.pet.species
 	pet.colors = AppState.state.pet.colors.duplicate(true)
 	pet.redraw()
+	if scene.has_method("update_passthrough"):
+		scene.call("update_passthrough")
 
 
 func _position_panel() -> void:

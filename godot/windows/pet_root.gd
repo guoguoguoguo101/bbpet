@@ -66,7 +66,7 @@ func _gui_input(event: InputEvent) -> void:
 func _set_pose(next_pose: String) -> void:
 	pixel_pet.pose = next_pose
 	pixel_pet.redraw()
-	_update_passthrough()
+	update_passthrough()
 
 
 func _blink_loop() -> void:
@@ -81,7 +81,7 @@ func _blink_loop() -> void:
 		_set_pose("idle")
 
 
-func _update_passthrough() -> void:
+func update_passthrough() -> void:
 	var image: Image = pixel_pet.current_image()
 	if image == null:
 		get_window().mouse_passthrough = false

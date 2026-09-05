@@ -22,6 +22,7 @@ var _label_nodes: Array[Label] = []
 var _last_send_ms := 0
 var _ignore_door_until_ms := 0
 var _was_moving := false
+var _alert := ""
 
 
 func _ready() -> void:
@@ -71,8 +72,8 @@ func apply_others(people: Array) -> void:
 
 
 func show_status(text: String) -> void:
-	if is_instance_valid(_status):
-		_status.text = text
+	_alert = text
+	_update_status()
 
 
 func _apply_incoming_people(incoming: Array) -> void:
@@ -233,8 +234,14 @@ func _configure_pet(id: String, data: Dictionary) -> void:
 		pet = PixelPetScene.instantiate()
 		_map_root.add_child(pet)
 		_pet_nodes[id] = pet
-	pet.species = data.get("species", "blob")
-	pet.colors = data.get("colors", AppState.state.pet.colors).duplicate(true)
+	var species := String(data.get("species", "blob"))
+	if not PetTemplates.DEFAULT_COLORS.has(species):
+		species = "blob"
+	var incoming_colors: Variant = data.get("colors", {})
+	if not incoming_colors is Dictionary:
+		incoming_colors = {}
+	pet.species = species
+	pet.colors = PetTemplates.colors_for(species, incoming_colors)
 	pet.pose = "idle"
 	pet.pixel_size = 2
 	pet.flip = data.get("facing", "r") == "l"
@@ -278,10 +285,12 @@ func _position_pet(pet: Variant, data: Dictionary) -> void:
 
 
 func _update_status() -> void:
-	if _place.is_empty():
+	if not _alert.is_empty():
+		_status.text = _alert
+	elif _place.is_empty():
 		_status.text = "正在走进校门..."
 	else:
-		_status.text = "%s · %d 人在这里" % [_place.title, _others.size() + 1]
+		_status.text = "%s · %d人" % [_place.title, _others.size() + 1]
 
 
 func _update_camera() -> void:

@@ -99,6 +99,7 @@ func mark_onboarded() -> void:
 func save_world_size(w: int, h: int) -> void:
 	state.settings.worldWidth = w
 	state.settings.worldHeight = h
+	save_to(DEFAULT_STATE_PATH)
 
 
 func pet_for_hello() -> Dictionary:

@@ -14,6 +14,23 @@ func run() -> int:
 	failed += _check("clientId", String(s.state.clientId).length() >= 8)
 	failed += _check("room", s.state.settings.roomUrl == SchoolLogic.DEFAULT_ROOM_URL)
 	failed += _check("default world size", s.state.settings.worldWidth == 820 and s.state.settings.worldHeight == 560)
+	var default_path := APP_STATE_SCRIPT.DEFAULT_STATE_PATH
+	var had_default := FileAccess.file_exists(default_path)
+	var previous_default := FileAccess.get_file_as_string(default_path) if had_default else ""
+	s.save_world_size(901, 607)
+	var persisted: APP_STATE_SCRIPT = APP_STATE_SCRIPT.new()
+	persisted.load_from(default_path)
+	failed += _check(
+		"save world size persists",
+		persisted.state.settings.worldWidth == 901 and persisted.state.settings.worldHeight == 607
+	)
+	persisted.free()
+	if had_default:
+		var restored := FileAccess.open(default_path, FileAccess.WRITE)
+		restored.store_string(previous_default)
+		restored.close()
+	else:
+		DirAccess.remove_absolute(ProjectSettings.globalize_path(default_path))
 	failed += _check("empty name", s.set_pet_name("   ") == false)
 	failed += _check("trim name", s.set_pet_name("  豆包豆包豆包豆包  ") and s.state.pet.name == "豆包豆包豆包豆包".substr(0, 12))
 	s.set_species("cat")
