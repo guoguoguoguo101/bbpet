@@ -1,6 +1,6 @@
 # BbPet Godot 学校社交核
 
-在现有 Godot 客户端上补点同学加好友、枢纽好友列表、教室黑板。校长协议不改。关学校窗改为离开地图、不断 WebSocket。
+在现有 Godot 客户端上补点同学加好友、枢纽好友列表、教室黑板。校长协议不改。关学校窗只藏窗口、不断 WebSocket，人仍留在学校（对齐 Electron）。
 
 ## 背景
 
@@ -17,7 +17,7 @@ Godot 客户端能够：
 1. 在学校点同学弹出菜单，发 `friendRequest`，双方立刻成为好友（校长现有逻辑，不用点同意）。
 2. 枢纽「好友」看到名单和在不在线；未连校长时点「好友」会先连上，不自动打开学校窗。
 3. 教室黑板发/看字，同一教室（含 Electron）约 1 秒内看到；隔壁班看不到。进房带最近约 80 条，画面显示最近 7 条。
-4. 关掉学校窗后人回到自己家，WebSocket 保持到退出程序或修改学校地址。
+4. 关掉学校窗后 WebSocket 保持到退出程序或修改学校地址；人仍留在学校，再点「去上学」回到刚才的地图。
 
 ## 范围
 
@@ -28,7 +28,7 @@ Godot 客户端能够：
 - 枢纽第三入口「好友」。面板种 `friends`。
 - 教室黑板 UI + 底栏输入。操场无输入、无头顶泡。
 - 点人菜单：加好友 / 已是好友 / 取消。
-- 改第一刀：`close_world` 不再断线，改为 `enterPlace("away")`（校长把 `away` 映射成自己家）。
+- 改第一刀：`close_world` 不再断线，只隐藏学校窗（不发 `enterPlace("away")`）。校长把 `away` 当成「回自己家」，人已在自己家时会静默丢弃，并不能用来离校。
 
 不做：
 
@@ -51,8 +51,8 @@ RoomClient  ──WS──► 现有校长
       chat, friends, error, notice
   丢: pose, dress, emote, gameState, …
 
-关学校窗: enterPlace("away") + 隐藏 WorldWindow
-退出 / 改学校地址: disconnect_room()
+关学校窗: 隐藏 WorldWindow（不断线、不离校）
+退出 / 改学校地址: discard_world() + disconnect_room()
 ```
 
 家的 snapshot（`home:`）和 `away` **不得**打开学校窗。只有 `placeId` 以 `school:` 开头的 snapshot 才 `show_world`。
@@ -62,8 +62,8 @@ RoomClient  ──WS──► 现有校长
 | 单元 | 职责 | 依赖 |
 | --- | --- | --- |
 | `RoomMessages` | `HANDLED` 含 `chat`、`friends` | 无 |
-| `RoomClient` | 长连；`send_chat(text)`、`request_friend(id)`、`leave_school()`；缓存 `friends`、`board`；信号 `chat_received`、`friends_changed` | AppState |
-| `WindowHub` | 枢纽三钮；`open_panel("friends")` 可先连校长；`close_world` → `leave_school`；学校 snapshot 才开世界窗 | RoomClient、Panel、World |
+| `RoomClient` | 长连；`send_chat(text)`、`request_friend(id)`；缓存 `friends`、`board`；信号 `chat_received`、`friends_changed` | AppState |
+| `WindowHub` | 枢纽三钮；`open_panel("friends")` 可先连校长；`close_world` 只藏窗；学校 snapshot 才开学校窗 | RoomClient、Panel、World |
 | `WorldWindow` | 点人菜单、教室黑板与输入、输入聚焦时不走路 | RoomClient、SchoolLogic |
 | `PanelWindow` | `friends` 列表；枢纽加「好友」 | RoomClient |
 | `school_social.gd`（可选纯函数） | 菜单分支、board 截 80、可见 7 条、`sanitize_chat` | 无 |
@@ -133,18 +133,17 @@ RoomClient  ──WS──► 现有校长
 
 **好友：** 未连则 `connect` + `hello`（`pending_enter` 为空）。`friends_changed` 或 welcome 后 `open_panel("friends")`。不要 `begin_school_flow`。
 
-**关学校窗 / 踩操场 `x`：** 保存尺寸、隐藏并释放学校窗、`leave_school()` → `enterPlace("away")`。`connected` 保持 true。好友缓存保留。
+**关学校窗 / 踩操场 `x`：** 保存尺寸、隐藏学校窗，不 `queue_free`、不发 `away`。`connected` 保持 true。人仍在学校。再点「去上学」显示同一扇窗。
 
-**设置改地址或种类/名字：** 与第一刀相同：若已连接则断开并关学校窗；需用户再点上学或好友。改种类后刷新桌宠穿透。
+**设置改地址或种类/名字：** 若已连接则 `discard_world()` 并断开；需用户再点上学或好友。改种类后刷新桌宠穿透。
 
 ## 错误处理
 
 - 连不上：「连不上学校」，桌宠不崩，不自动重连。
 - 中途断开：「已断开」；好友面板可保留最后名单但标断开；再点入口才重连。
-- 好友：校长原文 notice/error（`已添加 …`、`你们已经是好友了`、`不能加自己`、`没选到同学`）写入 `RoomClient.last_notice`（截断到 80 字）。学校窗开着时画在顶栏；好友面板开着时画在面板顶部一行。两处读同一字段。
+- 好友：校长原文 notice/error（`已添加 …`、`你们已经是好友了`、`不能加自己`、`没选到同学`）写入 `RoomClient.last_notice`（截断到 80 字）。学校窗开着时由 `status` 画进顶栏 `_alert`；进下一张地图或关窗后顶栏恢复人数。好友面板开着时画在面板顶部一行。
 - 黑板：空字不发；输入框 max 80。校长限流时本地不乐观插入。
 - 隔壁班 `chat.placeId` 不匹配则丢弃。
-- 关窗后 `away` 若报错：窗仍关，不断线，显示校长原文。
 
 ## 测试
 
@@ -154,7 +153,7 @@ Headless：
 - `sanitize_chat` 与 80 字截断。
 - board 最多 80，可见 7。
 - 未好友 / 已好友菜单谓词。
-- `leave_school` 记录 `enterPlace("away")` 且 `connected` 仍为 true。
+- 关学校窗只隐藏、不断线、不发 `away`。
 - 家 snapshot 不触发「应打开学校窗」的标志。
 
 手工：
@@ -162,7 +161,7 @@ Headless：
 1. 甲乙同班：甲写黑板，乙约 1 秒内看到 `名字：正文`；丙在隔壁班看不到。
 2. 进教室能看到进房前已有黑板（最近 7 条上屏）。
 3. 操场无输入；点同学能加好友；再点为「已是好友」。
-4. 枢纽好友显示对方在线/在学校；关学校窗后列表仍在且对方若仍连着则仍在线。
+4. 枢纽好友显示对方在线/在学校；关学校窗后列表仍在、连接还在；再点去上学会回到刚才的地图。
 5. 校长没开时点好友：有错误提示，桌宠还在。
 6. Electron 同学同班：黑板与加好友互通。
 
@@ -170,6 +169,6 @@ Headless：
 
 - 教室黑板 only，不做操场泡。
 - 点人小菜单，不直接点加。
-- 进程内长连，关窗回自己家。
+- 进程内长连，关窗只藏窗口，人仍在学校。
 - incoming 申请不画。
 - 不把好友做成第四扇系统窗。

@@ -171,12 +171,19 @@ func _show_room_status(text: String) -> void:
 
 
 func close_world() -> void:
-	if is_instance_valid(_world):
-		AppState.save_world_size(_world.size.x, _world.size.y)
-		_world.hide()
-		_world.queue_free()
-		_world = null
-	RoomClient.leave_school()
+	if not is_instance_valid(_world):
+		return
+	AppState.save_world_size(_world.size.x, _world.size.y)
+	_world.show_status("")
+	_world.hide()
+
+
+func discard_world() -> void:
+	close_world()
+	if not is_instance_valid(_world):
+		return
+	_world.queue_free()
+	_world = null
 
 
 func refresh_pet() -> void:
@@ -213,6 +220,7 @@ func hide_pet() -> void:
 
 
 func quit_app() -> void:
+	discard_world()
 	RoomClient.disconnect_room()
 	get_tree().quit()
 

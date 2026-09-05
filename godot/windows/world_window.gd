@@ -76,6 +76,7 @@ func apply_snapshot(you: Dictionary, people: Array, place_id: String) -> void:
 	_sync_pet_nodes()
 	if not _has_other(_inspect_id):
 		_close_inspect()
+	_alert = ""
 	_update_status()
 	_update_camera()
 	_refresh_board()
@@ -462,8 +463,6 @@ func _position_pet(pet: Variant, data: Dictionary) -> void:
 func _update_status() -> void:
 	if not _alert.is_empty():
 		_status.text = _alert
-	elif not RoomClient.last_notice.is_empty():
-		_status.text = RoomClient.last_notice
 	elif _place.is_empty():
 		_status.text = "正在走进校门..."
 	else:

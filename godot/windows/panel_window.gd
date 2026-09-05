@@ -287,7 +287,7 @@ func _save_settings(
 	_window_hub().refresh_pet()
 	var room_client := _room_client()
 	if room_client.connected:
-		_window_hub().close_world()
+		_window_hub().discard_world()
 		room_client.disconnect_room()
 	_window_hub().close_panel()
 

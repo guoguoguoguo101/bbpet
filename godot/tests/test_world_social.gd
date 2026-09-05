@@ -21,7 +21,17 @@ func run() -> int:
 	var tscn := FileAccess.get_file_as_string("res://windows/world_window.tscn")
 	failed += _check("chat bar scene", tscn.contains("name=\"ChatBar\""))
 	failed += _check("chat input scene", tscn.contains("name=\"ChatInput\""))
+	failed += _check("status not stuck on last notice", not _update_status_uses_last_notice(source))
 	return failed
+
+
+func _update_status_uses_last_notice(source: String) -> bool:
+	var start := source.find("func _update_status")
+	if start < 0:
+		return true
+	var nxt := source.find("\nfunc ", start + 1)
+	var body := source.substr(start, nxt - start if nxt > start else source.length() - start)
+	return body.contains("last_notice")
 
 
 func _check(label: String, ok: bool) -> int:

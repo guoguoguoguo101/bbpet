@@ -19,11 +19,11 @@ func run() -> int:
 	failed += _check("tray hide item", source.contains('menu.add_item("隐藏", MENU_HIDE)'))
 	failed += _check("tray quit item", source.contains('menu.add_item("退出", MENU_QUIT)'))
 	failed += _check("quit disconnects room", source.contains("RoomClient.disconnect_room()"))
-	failed += _check("close world leaves school", source.contains("RoomClient.leave_school()"))
 	failed += _check(
-		"close world does not disconnect",
-		_close_world_does_not_disconnect(source)
+		"close world hides without leaving",
+		_close_world_hides_without_leaving(source)
 	)
+	failed += _check("discard world on quit", source.contains("func discard_world"))
 	failed += _check("friends panel kind", source.contains('"friends"'))
 	failed += _check("open friends API", source.contains("func open_friends"))
 	failed += _check(
@@ -45,13 +45,18 @@ func _open_friends_connects_before_opening(source: String) -> bool:
 	return connect >= 0 and open >= 0 and connect < open
 
 
-func _close_world_does_not_disconnect(source: String) -> bool:
+func _close_world_hides_without_leaving(source: String) -> bool:
 	var start := source.find("func close_world")
 	if start < 0:
 		return false
 	var nxt := source.find("\nfunc ", start + 1)
 	var body := source.substr(start, nxt - start if nxt > start else source.length() - start)
-	return body.contains("leave_school") and not body.contains("disconnect_room")
+	return (
+		body.contains("_world.hide()")
+		and not body.contains("leave_school")
+		and not body.contains("disconnect_room")
+		and not body.contains("queue_free")
+	)
 
 
 func _check(label: String, ok: bool) -> int:
