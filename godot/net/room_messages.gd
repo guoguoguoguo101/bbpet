@@ -3,7 +3,7 @@ extends RefCounted
 
 const HANDLED := [
 	"welcome", "snapshot", "join", "leave", "move", "poses",
-	"chat", "friends", "error", "notice",
+	"chat", "friends", "error", "notice", "emote", "pose",
 ]
 
 static func encode(msg: Dictionary) -> PackedByteArray:
