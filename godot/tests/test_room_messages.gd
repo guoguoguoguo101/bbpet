@@ -12,8 +12,12 @@ func run() -> int:
 	failed += _check("hello type", hello.type == "hello" and hello.clientId == "abc")
 	var parsed: Dictionary = RoomMessages.parse_server('{"type":"notice","text":"满员"}')
 	failed += _check("notice", parsed.ignored == false and parsed.type == "notice")
-	var drop: Dictionary = RoomMessages.parse_server('{"type":"chat","line":{}}')
-	failed += _check("drop chat", drop.ignored == true)
+	var chat: Dictionary = RoomMessages.parse_server(
+		'{"type":"chat","line":{"id":"1","name":"豆豆","text":"hi","placeId":"school:class-1"}}'
+	)
+	failed += _check("parse chat", chat.ignored == false and chat.type == "chat")
+	var friends: Dictionary = RoomMessages.parse_server('{"type":"friends","friends":[],"incoming":[]}')
+	failed += _check("parse friends", friends.ignored == false and friends.type == "friends")
 	var drop2: Dictionary = RoomMessages.parse_server('{"type":"gameState"}')
 	failed += _check("drop game", drop2.ignored == true)
 	var bad: Dictionary = RoomMessages.parse_server("not-json")
