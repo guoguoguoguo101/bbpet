@@ -25,6 +25,28 @@ npm install
 
 以后换 DeepSeek 或其他 OpenAI 兼容接口，只改设置里的地址和模型名。没填 Key 时，桌宠和天气一般还能看，跟 LLM 聊天不可用。
 
+## Godot 客户端（实验）
+
+需要 [Godot 4.4+](https://godotengine.org/download)（编辑器命令行能跑 `godot`）。校长仍是 Node，不要用 Godot 当校长。
+
+用编辑器打开 `godot/project.godot`，或：
+
+```bat
+godot --path godot
+```
+
+纯函数测试：
+
+```bat
+npm run test:godot
+```
+
+先另开一个终端跑 `npm run room`。Godot 里左键枢纽 → 去上学。设置里学校地址默认 `ws://127.0.0.1:18765`。
+
+和现在的 Electron 客户端对照时，用两只不同的宠（两份档案、两个 id）。不要把 Godot 的 `user://bbpet-state.json` 拷到 Electron 的 userData。本机可同时 `npm start` 一只 Electron 宠，进同一所学校应能互相看见。
+
+导出给同事：编辑器 项目 → 导出 → Windows Desktop。EXE 不包含校长进程，同事仍要有人跑 `npm run room`，并在设置里填 `ws://内网IP:18765`。
+
 ## 学校（校长服务 + 桌宠）
 
 学校位置、谁在哪间教室、好友列表都在**校长进程**里。桌宠只当学生去连它，不要两边都勾「我来当校长」。
