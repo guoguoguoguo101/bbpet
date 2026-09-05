@@ -6,6 +6,7 @@ const PetSync = preload("res://school/sync.gd")
 const PixelPetScene = preload("res://pet/pixel_pet.tscn")
 const SchoolLogic = preload("res://school/school_logic.gd")
 const SchoolSocial = preload("res://school/school_social.gd")
+const HomeLogic = preload("res://home/home_logic.gd")
 const CAMERA_SCALE := 1.8
 
 @onready var _status: Label = $VBox/Status
@@ -387,10 +388,22 @@ func _open_inspect(client_id: String) -> void:
 	box.add_child(name_label)
 	var kind := SchoolSocial.friend_menu_kind(client_id, SchoolSocial.friend_ids(RoomClient.friends))
 	if kind == "already":
-		var already := Button.new()
-		already.text = "已是好友"
-		already.disabled = true
-		box.add_child(already)
+		var card: Dictionary = {}
+		for item in RoomClient.friends:
+			if String(item.get("clientId", "")) == client_id:
+				card = item
+				break
+		var visit := Button.new()
+		if HomeLogic.is_friend_at_home(card):
+			visit.text = "去他家"
+			visit.pressed.connect(func():
+				WindowHub.go_home(client_id)
+				_close_inspect()
+			)
+		else:
+			visit.text = "不在家"
+			visit.disabled = true
+		box.add_child(visit)
 	else:
 		var add := Button.new()
 		add.text = "加好友"
