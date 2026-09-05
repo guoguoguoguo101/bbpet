@@ -33,8 +33,7 @@ func load_from(path: String) -> void:
 			state.pet.name = sanitize_name(pet.name)
 		if pet.has("species") and PET_TEMPLATES.DEFAULT_COLORS.has(pet.species):
 			state.pet.species = pet.species
-		if pet.has("colors") and pet.colors is Dictionary:
-			state.pet.colors = pet.colors.duplicate(true)
+		state.pet.colors = PET_TEMPLATES.DEFAULT_COLORS[state.pet.species].duplicate(true)
 	if saved.has("settings") and saved.settings is Dictionary:
 		var settings: Dictionary = saved.settings
 		if settings.has("roomUrl") and settings.roomUrl is String:
@@ -78,8 +77,7 @@ func set_species(species: String) -> void:
 	state.pet.colors = PET_TEMPLATES.DEFAULT_COLORS[species].duplicate(true)
 
 
-@warning_ignore("native_method_override")
-func set_name(text: String):
+func set_pet_name(text: String) -> bool:
 	var sanitized := sanitize_name(text)
 	if sanitized.is_empty():
 		return false
