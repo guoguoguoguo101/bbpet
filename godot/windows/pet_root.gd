@@ -310,7 +310,7 @@ func _refresh_gathering() -> void:
 		return
 	_layout_signature = signature
 
-	get_window().size = Vector2i(int(yard.width), int(yard.height))
+	_set_window_size(Vector2i(int(yard.width), int(yard.height)))
 	_rebuild_slots(views)
 	_refresh_bar(you, guests, my_id, yard)
 	_refresh_log(yard)
@@ -325,9 +325,19 @@ func _shrink_to_pet() -> void:
 	_layout_signature = ""
 	_emote_menu.visible = false
 	_clear_slots()
-	get_window().size = PET_SIZE
+	_set_window_size(PET_SIZE)
 	pixel_pet.position = PET_OFFSET
 	update_passthrough()
+
+
+func _set_window_size(new_size: Vector2i) -> void:
+	var win := get_window()
+	var prev_pos := win.position
+	var prev_size := win.size
+	win.size = new_size
+	win.position = HomeLogic.anchor_window(
+		prev_pos, prev_size, new_size, DisplayServer.screen_get_usable_rect()
+	)
 
 
 func _guest_views(guests: Array) -> Array:

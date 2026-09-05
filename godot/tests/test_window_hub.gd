@@ -28,11 +28,31 @@ func run() -> int:
 	failed += _check("open friends API", source.contains("func open_friends"))
 	failed += _check("go home API", source.contains("func go_home"))
 	failed += _check(
+		"go home connects before pending",
+		_go_home_connects_before_pending(source)
+	)
+	failed += _check(
 		"connect room before opening friends",
 		_open_friends_connects_before_opening(source)
 	)
 	failed += _check("school snapshot gate", source.contains("SchoolSocial.should_open_world"))
 	return failed
+
+
+func _go_home_connects_before_pending(source: String) -> bool:
+	var start := source.find("func go_home")
+	if start < 0:
+		return false
+	var nxt := source.find("\nfunc ", start + 1)
+	var body := source.substr(start, nxt - start if nxt > start else source.length() - start)
+	var connect := body.find("connect_room")
+	var pending := body.find("pending_enter")
+	return (
+		body.contains("RoomClient.go_home")
+		and connect >= 0
+		and pending >= 0
+		and connect < pending
+	)
 
 
 func _open_friends_connects_before_opening(source: String) -> bool:

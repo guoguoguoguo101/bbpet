@@ -10,7 +10,27 @@ func run() -> int:
 	failed += _check("no flyer", not source.contains("FLYER") and not source.contains("playFlyer"))
 	failed += _check("home chat", source.contains("send_home_chat"))
 	failed += _check("send emote", source.contains("send_emote"))
+	failed += _check("anchor math", source.contains("HomeLogic.anchor_window"))
+	failed += _check(
+		"reposition on gather",
+		_fn_contains(source, "_refresh_gathering", "_set_window_size")
+		or _fn_contains(source, "_refresh_gathering", "HomeLogic.anchor_window")
+	)
+	failed += _check(
+		"reposition on shrink",
+		_fn_contains(source, "_shrink_to_pet", "_set_window_size")
+		or _fn_contains(source, "_shrink_to_pet", "HomeLogic.anchor_window")
+	)
 	return failed
+
+
+func _fn_contains(source: String, fn: String, needle: String) -> bool:
+	var start := source.find("func %s" % fn)
+	if start < 0:
+		return false
+	var nxt := source.find("\nfunc ", start + 1)
+	var body := source.substr(start, nxt - start if nxt > start else source.length() - start)
+	return body.contains(needle)
 
 func _check(label: String, ok: bool) -> int:
 	if ok:

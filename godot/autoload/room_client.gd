@@ -105,8 +105,10 @@ func disconnect_room() -> void:
 	home_board.clear()
 	last_emote.clear()
 	home_poses.clear()
+	_you.clear()
 	_url = ""
 	_has_last_move = false
+	home_updated.emit()
 
 
 func begin_school_flow() -> void:

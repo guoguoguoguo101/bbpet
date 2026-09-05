@@ -145,6 +145,18 @@ static func emote_label(kind: String) -> String:
 	return ""
 
 
+static func anchor_window(prev_pos: Vector2i, prev_size: Vector2i, new_size: Vector2i, usable: Rect2i) -> Vector2i:
+	var x := mini(
+		maxi(usable.position.x + 4, prev_pos.x + prev_size.x - new_size.x),
+		usable.position.x + usable.size.x - new_size.x - 8
+	)
+	var y := mini(
+		maxi(usable.position.y + 4, prev_pos.y + prev_size.y - new_size.y),
+		usable.position.y + usable.size.y - new_size.y - 6
+	)
+	return Vector2i(x, y)
+
+
 static func gathering_title(you: Dictionary, guests: Array, my_id: String) -> String:
 	var owner_id := home_owner_id(String(you.get("homeId", "")))
 	if owner_id == my_id:

@@ -54,6 +54,35 @@ func run() -> int:
 		"title visit",
 		HomeLogic.gathering_title({"homeId": "home:host"}, [{"clientId": "host", "name": "乙"}], "me") == "乙家"
 	)
+	failed += _check(
+		"title visit fallback",
+		HomeLogic.gathering_title({"homeId": "home:host"}, [{"clientId": "host"}], "me") == "好友家"
+	)
+	var slot0: Dictionary = HomeLogic.slot_offset(0, 5)
+	failed += _check("slot 0", int(slot0.x) == 24 and int(slot0.y) == 40)
+	var slot_row2: Dictionary = HomeLogic.slot_offset(4, 5)
+	failed += _check("slot second row", int(slot_row2.x) == 24 and int(slot_row2.y) == 134)
+	var pour := {"kind": "pour", "fromId": "a", "targetId": "b"}
+	failed += _check("pour from pose", HomeLogic.pose_for_action(pour, "a", "idle") == "drink")
+	failed += _check("pour to pose", HomeLogic.pose_for_action(pour, "b", "idle") == "drink")
+	var wake := {"kind": "wake", "fromId": "a", "targetId": "b"}
+	failed += _check("wake from pose", HomeLogic.pose_for_action(wake, "a", "sleep") == "wave")
+	failed += _check("wake to pose", HomeLogic.pose_for_action(wake, "b", "sleep") == "wake")
+	failed += _check("wake to wave when awake", HomeLogic.pose_for_action(wake, "b", "idle") == "wave")
+	var usable := Rect2i(0, 0, 1920, 1080)
+	failed += _check(
+		"anchor grow bottom-right",
+		HomeLogic.anchor_window(Vector2i(1848, 986), Vector2i(64, 86), Vector2i(248, 164), usable) == Vector2i(1664, 908)
+	)
+	failed += _check(
+		"anchor shrink bottom-right",
+		HomeLogic.anchor_window(Vector2i(1664, 908), Vector2i(248, 164), Vector2i(64, 86), usable) == Vector2i(1848, 986)
+	)
+	var inset := Rect2i(10, 20, 800, 600)
+	failed += _check(
+		"anchor clamp min",
+		HomeLogic.anchor_window(Vector2i(10, 20), Vector2i(64, 86), Vector2i(400, 300), inset) == Vector2i(14, 24)
+	)
 	return failed
 
 

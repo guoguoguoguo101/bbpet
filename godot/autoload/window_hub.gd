@@ -111,8 +111,8 @@ func go_home(owner_id: String = "") -> void:
 	if RoomClient.connected:
 		RoomClient.go_home(target)
 		return
-	RoomClient.pending_enter = HomeLogic.home_place_id(target)
 	RoomClient.connect_room(AppState.state.settings.roomUrl)
+	RoomClient.pending_enter = HomeLogic.home_place_id(target)
 
 
 func open_friends() -> void:

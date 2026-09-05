@@ -20,6 +20,16 @@ func run() -> int:
 		+ '"home":{"placeId":"home:x","people":[{"clientId":"y","name":"乙"}],"board":[],"friends":[]}}'
 	)
 	failed += _check("welcome home people", rc.home_people.size() == 1)
+	rc.disconnect_room()
+	failed += _check("disconnect clears you", rc.you_dict().is_empty())
+	failed += _check("disconnect clears home people", rc.home_people.is_empty())
+	failed += _check("disconnect clears home id", rc.home_id().is_empty())
+	rc.connected = true
+	rc._handle_server_text(
+		'{"type":"welcome","you":{"clientId":"x","homeId":"home:x","placeId":"home:x"},'
+		+ '"home":{"placeId":"home:x","people":[{"clientId":"y","name":"乙"}],"board":[],"friends":[]}}'
+	)
+	failed += _check("rewelcome home people", rc.home_people.size() == 1)
 	rc._handle_server_text(
 		'{"type":"snapshot","you":{"clientId":"x","homeId":"home:x","schoolPlaceId":"school:campus"},'
 		+ '"snapshot":{"placeId":"school:campus","people":[],"board":[]}}'
