@@ -702,12 +702,13 @@ func _image_points(image: Image, at: Vector2) -> Array[Vector2]:
 
 func _apply_hull(points: Array[Vector2]) -> void:
 	var hull := _convex_hull(points)
+	# On Windows, Window.mouse_passthrough=true makes the whole window
+	# click-through, including the polygon. Use the region API instead.
+	get_window().mouse_passthrough = false
 	if hull.size() < 3:
-		get_window().mouse_passthrough = false
-		get_window().mouse_passthrough_polygon = PackedVector2Array()
+		DisplayServer.window_set_mouse_passthrough(PackedVector2Array())
 		return
-	get_window().mouse_passthrough = true
-	get_window().mouse_passthrough_polygon = hull
+	DisplayServer.window_set_mouse_passthrough(hull)
 
 
 func _convex_hull(points: Array[Vector2]) -> PackedVector2Array:

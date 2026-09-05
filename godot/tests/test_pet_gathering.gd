@@ -10,6 +10,8 @@ func run() -> int:
 	failed += _check("no flyer", not source.contains("FLYER") and not source.contains("playFlyer"))
 	failed += _check("home chat", source.contains("send_home_chat"))
 	failed += _check("send emote", source.contains("send_emote"))
+	failed += _check("passthrough region", source.contains("DisplayServer.window_set_mouse_passthrough"))
+	failed += _check("no full click-through", not source.contains("mouse_passthrough = true"))
 	failed += _check("anchor math", source.contains("HomeLogic.anchor_window"))
 	failed += _check(
 		"reposition on gather",
