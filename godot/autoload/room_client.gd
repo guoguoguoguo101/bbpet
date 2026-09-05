@@ -7,10 +7,13 @@ signal others_updated(people: Array)
 signal disconnected
 signal chat_received(line: Dictionary)
 signal friends_changed(friends: Array)
+signal home_updated
+signal emote_received(emote: Dictionary)
 
 const RoomMessages = preload("res://net/room_messages.gd")
 const SchoolSocial = preload("res://school/school_social.gd")
 const SchoolLogic = preload("res://school/school_logic.gd")
+const HomeLogic = preload("res://home/home_logic.gd")
 const SCHOOL_CAMPUS := "school:campus"
 
 var connected := false
@@ -23,6 +26,10 @@ var board: Array = []
 var last_notice := ""
 var last_sent: Dictionary = {}
 var place_id := ""
+var home_people: Array = []
+var home_board: Array = []
+var last_emote: Dictionary = {}
+var home_poses: Dictionary = {}
 var connecting := false
 var _url := ""
 
@@ -94,6 +101,10 @@ func disconnect_room() -> void:
 	place_id = ""
 	_people.clear()
 	board.clear()
+	home_people.clear()
+	home_board.clear()
+	last_emote.clear()
+	home_poses.clear()
 	_url = ""
 	_has_last_move = false
 
@@ -122,6 +133,37 @@ func leave_school() -> void:
 	if not connected:
 		return
 	enter_place("away")
+
+
+func go_home(owner_id: String) -> void:
+	if owner_id.is_empty():
+		return
+	enter_place(HomeLogic.home_place_id(owner_id))
+
+
+func send_home_chat(text: String) -> void:
+	var cleaned := SchoolSocial.sanitize_chat(text)
+	if cleaned.is_empty() or not connected or home_id().is_empty():
+		return
+	_send({"type": "chat", "text": cleaned, "placeId": home_id()})
+
+
+func send_emote(kind: String, target_id: String) -> void:
+	if not connected or kind.is_empty() or target_id.is_empty() or home_id().is_empty():
+		return
+	_send({"type": "emote", "kind": kind, "targetId": target_id, "placeId": home_id()})
+
+
+func you_dict() -> Dictionary:
+	return _you.duplicate(true)
+
+
+func home_id() -> String:
+	return String(_you.get("homeId", ""))
+
+
+func my_id() -> String:
+	return String(_you.get("clientId", _app_state().state.clientId))
 
 
 func is_friend(client_id: String) -> bool:
@@ -157,25 +199,41 @@ func _handle_server_text(text: String) -> void:
 		"welcome":
 			_you = msg.get("you", {}).duplicate(true)
 			_apply_friends(msg.get("home", {}))
+			_apply_home_bucket(msg.get("home", {}))
+			home_updated.emit()
 			if not pending_enter.is_empty():
 				enter_place(pending_enter)
 		"snapshot":
 			var snapshot: Dictionary = msg.get("snapshot", {})
-			var people: Array = snapshot.get("people", [])
 			_you = msg.get("you", {}).duplicate(true)
-			place_id = String(snapshot.get("placeId", ""))
-			_people = _without_self(people)
+			var snap_id := String(snapshot.get("placeId", ""))
 			_apply_friends(snapshot)
-			_apply_board(snapshot)
-			if pending_enter == place_id:
-				pending_enter = ""
-			snapshot_ready.emit(_you.duplicate(true), _people.duplicate(true), place_id)
+			if snap_id.begins_with("home:"):
+				_apply_home_bucket(snapshot)
+				if pending_enter == snap_id:
+					pending_enter = ""
+				home_updated.emit()
+			else:
+				place_id = snap_id
+				_people = _without_self(snapshot.get("people", []))
+				_apply_board(snapshot)
+				if pending_enter == place_id:
+					pending_enter = ""
+				snapshot_ready.emit(_you.duplicate(true), _people.duplicate(true), place_id)
 		"join":
-			if String(msg.get("placeId", "")) == place_id:
+			var join_place := String(msg.get("placeId", ""))
+			if join_place == place_id:
 				_upsert_person(msg.get("person", {}))
+			if join_place == home_id() and not home_id().is_empty():
+				_upsert_home_person(msg.get("person", {}))
+				home_updated.emit()
 		"leave":
-			if String(msg.get("placeId", "")) == place_id:
+			var leave_place := String(msg.get("placeId", ""))
+			if leave_place == place_id:
 				_remove_person(String(msg.get("clientId", "")))
+			if leave_place == home_id() and not home_id().is_empty():
+				_remove_home_person(String(msg.get("clientId", "")))
+				home_updated.emit()
 		"move":
 			_apply_move(msg)
 		"poses":
@@ -188,7 +246,17 @@ func _handle_server_text(text: String) -> void:
 		"friends":
 			_apply_friends(msg)
 		"chat":
-			_apply_chat(msg.get("line", {}))
+			_apply_incoming_chat(msg.get("line", {}))
+		"emote":
+			var emote: Variant = msg.get("emote", {})
+			if emote is Dictionary:
+				last_emote = emote.duplicate(true)
+			else:
+				last_emote = {}
+			emote_received.emit(last_emote.duplicate(true))
+			home_updated.emit()
+		"pose":
+			_apply_home_pose(msg)
 		"error", "notice":
 			var raw := String(msg.get("message", msg.get("text", "")))
 			status_text = raw.replace("\r", " ").replace("\n", " ").substr(0, 80)
@@ -233,6 +301,27 @@ func _apply_friends(source: Dictionary) -> void:
 		if card is Dictionary:
 			incoming.append(card.duplicate(true))
 	friends_changed.emit(friends.duplicate(true))
+
+
+func _apply_home_bucket(source: Dictionary) -> void:
+	home_people = _without_self(source.get("people", []))
+	home_board = []
+	var raw: Array = source.get("board", [])
+	for line in raw:
+		if line is Dictionary:
+			home_board = SchoolSocial.append_board(home_board, line)
+
+
+func _apply_incoming_chat(line: Dictionary) -> void:
+	if line.is_empty():
+		return
+	var line_place := String(line.get("placeId", ""))
+	var hid := home_id()
+	if not hid.is_empty() and line_place == hid:
+		home_board = SchoolSocial.append_board(home_board, line)
+		home_updated.emit()
+		return
+	_apply_chat(line)
 
 
 func _apply_board(snapshot: Dictionary) -> void:
@@ -314,6 +403,43 @@ func _apply_pose_item(item: Dictionary) -> void:
 			person.facing = item.get("facing", person.get("facing", "r"))
 			_people[index] = person
 			return
+
+
+func _upsert_home_person(person: Dictionary) -> void:
+	var client_id := String(person.get("clientId", ""))
+	if client_id.is_empty() or client_id == String(_you.get("clientId", "")):
+		return
+	for index in home_people.size():
+		if String(home_people[index].get("clientId", "")) == client_id:
+			home_people[index] = person.duplicate(true)
+			return
+	home_people.append(person.duplicate(true))
+
+
+func _remove_home_person(client_id: String) -> void:
+	for index in range(home_people.size() - 1, -1, -1):
+		if String(home_people[index].get("clientId", "")) == client_id:
+			home_people.remove_at(index)
+
+
+func _apply_home_pose(msg: Dictionary) -> void:
+	var client_id := String(msg.get("clientId", ""))
+	if client_id.is_empty():
+		return
+	var pose_place := String(msg.get("placeId", ""))
+	if pose_place.begins_with("school:"):
+		return
+	var pose := String(msg.get("pose", "idle"))
+	home_poses[client_id] = pose
+	for index in home_people.size():
+		var person: Dictionary = home_people[index]
+		if String(person.get("clientId", "")) == client_id:
+			person.pose = pose
+			person.lookX = msg.get("lookX", person.get("lookX", 0.0))
+			person.lookY = msg.get("lookY", person.get("lookY", 0.0))
+			home_people[index] = person
+			break
+	home_updated.emit()
 
 
 func _app_state() -> Node:

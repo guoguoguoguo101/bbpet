@@ -10,6 +10,42 @@ func run() -> int:
 	if not rc.has_method("leave_school") or not rc.has_method("send_chat") or not rc.has_method("request_friend"):
 		rc.free()
 		return _check("social API", false)
+	failed += _check("go_home API", rc.has_method("go_home") and rc.has_method("send_emote") and rc.has_method("send_home_chat"))
+	if failed:
+		rc.free()
+		return failed
+	rc.connected = true
+	rc._handle_server_text(
+		'{"type":"welcome","you":{"clientId":"x","homeId":"home:x","placeId":"home:x"},'
+		+ '"home":{"placeId":"home:x","people":[{"clientId":"y","name":"乙"}],"board":[],"friends":[]}}'
+	)
+	failed += _check("welcome home people", rc.home_people.size() == 1)
+	rc._handle_server_text(
+		'{"type":"snapshot","you":{"clientId":"x","homeId":"home:x","schoolPlaceId":"school:campus"},'
+		+ '"snapshot":{"placeId":"school:campus","people":[],"board":[]}}'
+	)
+	var school_place: String = rc.place_id
+	failed += _check("school place", school_place == "school:campus")
+	rc._handle_server_text(
+		'{"type":"snapshot","you":{"clientId":"x","homeId":"home:x","schoolPlaceId":"school:campus"},'
+		+ '"snapshot":{"placeId":"home:x","people":[{"clientId":"y","name":"乙"}],"board":[]}}'
+	)
+	failed += _check("home snapshot keeps school place", rc.place_id == "school:campus")
+	failed += _check("home people from home snap", rc.home_people.size() == 1)
+	failed += _check("home must not open world", SchoolSocial.should_open_world("home:x") == false)
+	rc._handle_server_text(
+		'{"type":"join","placeId":"home:x","person":{"clientId":"z","name":"丙"}}'
+	)
+	failed += _check("home join while at school", rc.home_people.size() == 2)
+	rc.go_home("y")
+	failed += _check("visit enter", rc.last_enter_requested == "home:y")
+	rc.send_emote("hug", "y")
+	failed += _check("emote payload", rc.last_sent.type == "emote" and rc.last_sent.kind == "hug" and rc.last_sent.targetId == "y")
+	var pose_before: Array = rc.home_people.duplicate(true)
+	rc.send_emote("kick", "y")
+	failed += _check("no optimistic emote pose", rc.home_people.size() == pose_before.size())
+	rc.send_home_chat("  客厅  ")
+	failed += _check("home chat", rc.last_sent.type == "chat" and rc.last_sent.placeId == "home:x" and rc.last_sent.text == "客厅")
 	rc.disconnect_room()
 	var saw := {"campus": false, "home": false, "friends": 0, "chats": 0}
 	rc.snapshot_ready.connect(func(_you, _people, place_id):
@@ -46,7 +82,7 @@ func run() -> int:
 		'{"type":"snapshot","you":{"clientId":"x","placeId":"home:x"},'
 		+ '"snapshot":{"placeId":"home:x","people":[],"board":[],"friends":[{"clientId":"y","name":"乙","online":true}]}}'
 	)
-	failed += _check("home snapshot emitted", saw.home)
+	failed += _check("home snapshot not school signal", saw.home == false)
 	failed += _check("home must not open world", SchoolSocial.should_open_world("home:x") == false)
 	rc._handle_server_text(
 		'{"type":"snapshot","you":{"clientId":"x","x":40,"y":40,"name":"豆豆"},'
