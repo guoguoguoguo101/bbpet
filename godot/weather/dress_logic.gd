@@ -51,17 +51,24 @@ const WEATHER_LINES: Dictionary = {
 }
 
 
-static func dress_for(code: int, temperature: float, is_day: bool, wind: float) -> Dictionary:
+static func dress_for(
+	code: int,
+	temperature: float,
+	is_day: bool,
+	wind: float,
+	pick_index: int = -1
+) -> Dictionary:
+	var line_index := randi() if pick_index < 0 else pick_index
 	if not is_day:
 		return {
 			"gear": [],
 			"fx": ["stars"],
-			"dressLine": pick_line(WEATHER_LINES.night),
+			"dressLine": pick_line(WEATHER_LINES.night, line_index),
 		}
 
 	var gear: Array = []
 	var fx: Array = []
-	var dress_line: String = pick_line(WEATHER_LINES.fallback)
+	var dress_line: String = pick_line(WEATHER_LINES.fallback, line_index)
 
 	var storm := code >= 95 or code == 82 or code == 99
 	var snow := code in [71, 73, 75, 77, 85, 86]
@@ -75,36 +82,39 @@ static func dress_for(code: int, temperature: float, is_day: bool, wind: float) 
 	if storm:
 		gear.append_array(["raincoat", "umbrella"])
 		fx.append_array(["rain", "storm"])
-		dress_line = pick_line(WEATHER_LINES.storm)
+		dress_line = pick_line(WEATHER_LINES.storm, line_index)
 	elif snow:
 		gear.append_array(["beanie", "scarf", "snowman"])
 		fx.append("snow")
-		dress_line = pick_line(WEATHER_LINES.snow)
+		dress_line = pick_line(WEATHER_LINES.snow, line_index)
 	elif rain:
 		gear.append_array(["raincoat", "umbrella"])
 		fx.append("rain")
-		dress_line = pick_line(WEATHER_LINES.rain)
+		dress_line = pick_line(WEATHER_LINES.rain, line_index)
 	elif drizzle:
 		gear.append("umbrella")
 		fx.append("rain")
-		dress_line = pick_line(WEATHER_LINES.drizzle)
+		dress_line = pick_line(WEATHER_LINES.drizzle, line_index)
 	elif fog:
 		fx.append("fog")
-		dress_line = pick_line(WEATHER_LINES.fog)
+		dress_line = pick_line(WEATHER_LINES.fog, line_index)
 	elif clear:
 		gear.append_array(["shades", "juice"])
 		fx.append("sun")
-		dress_line = pick_line(WEATHER_LINES.sunHot if temperature >= 30 else WEATHER_LINES.sun)
+		dress_line = pick_line(
+			WEATHER_LINES.sunHot if temperature >= 30 else WEATHER_LINES.sun,
+			line_index
+		)
 	elif partly:
 		fx.append_array(["cloud", "sun"])
 		if temperature >= 30:
 			gear.append_array(["shades", "juice"])
-			dress_line = pick_line(WEATHER_LINES.sunHot)
+			dress_line = pick_line(WEATHER_LINES.sunHot, line_index)
 		else:
-			dress_line = pick_line(WEATHER_LINES.partly)
+			dress_line = pick_line(WEATHER_LINES.partly, line_index)
 	elif overcast:
 		fx.append("cloud")
-		dress_line = pick_line(WEATHER_LINES.overcast)
+		dress_line = pick_line(WEATHER_LINES.overcast, line_index)
 
 	if temperature <= 6 and not rain and not drizzle and not storm:
 		if not gear.has("scarf"):
@@ -112,26 +122,26 @@ static func dress_for(code: int, temperature: float, is_day: bool, wind: float) 
 		if not gear.has("beanie"):
 			gear.append("beanie")
 		if not snow:
-			dress_line = pick_line(WEATHER_LINES.cold)
+			dress_line = pick_line(WEATHER_LINES.cold, line_index)
 
 	if temperature >= 30 and (rain or drizzle) and not gear.has("raincoat"):
 		gear.append("raincoat")
 
 	if wind >= 28 and not storm:
 		fx.append("wind")
-		dress_line = pick_line(WEATHER_LINES.wind)
+		dress_line = pick_line(WEATHER_LINES.wind, line_index)
 
 	if gear.is_empty() and fx.is_empty():
 		if temperature >= 28:
 			gear.append_array(["shades", "juice"])
 			fx.append("sun")
-			dress_line = pick_line(WEATHER_LINES.sunHot)
+			dress_line = pick_line(WEATHER_LINES.sunHot, line_index)
 		elif temperature <= 6:
 			gear.append_array(["scarf", "beanie"])
-			dress_line = pick_line(WEATHER_LINES.cold)
+			dress_line = pick_line(WEATHER_LINES.cold, line_index)
 		else:
 			fx.append("cloud")
-			dress_line = pick_line(WEATHER_LINES.fallback)
+			dress_line = pick_line(WEATHER_LINES.fallback, line_index)
 
 	return {
 		"gear": _unique(gear),

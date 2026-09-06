@@ -5,13 +5,13 @@ const DressLogic = preload("res://weather/dress_logic.gd")
 
 func run() -> int:
 	var failed := 0
-	var night: Dictionary = DressLogic.dress_for(0, 20.0, false, 0.0)
+	var night: Dictionary = DressLogic.dress_for(0, 20.0, false, 0.0, 1)
 	failed += _check("night stars", night.fx == ["stars"] and night.gear.is_empty())
-	failed += _check("night line", night.dressLine == "晚上了，陪你一起数星星。")
-	var storm: Dictionary = DressLogic.dress_for(95, 18.0, true, 5.0)
+	failed += _check("night line", night.dressLine == "月亮出来了，我还不困。")
+	var storm: Dictionary = DressLogic.dress_for(95, 18.0, true, 5.0, 2)
 	failed += _check("storm gear", storm.gear.has("raincoat") and storm.gear.has("umbrella"))
 	failed += _check("storm fx", storm.fx.has("rain") and storm.fx.has("storm"))
-	failed += _check("storm line", storm.dressLine == "打雷了，我躲到小伞下面。")
+	failed += _check("storm line", storm.dressLine == "雷阵雨好吵，我们靠紧一点。")
 	var snow: Dictionary = DressLogic.dress_for(71, -2.0, true, 5.0)
 	failed += _check("snow", snow.gear == ["beanie", "scarf", "snowman"] and snow.fx == ["snow"])
 	var rain: Dictionary = DressLogic.dress_for(61, 18.0, true, 5.0)
