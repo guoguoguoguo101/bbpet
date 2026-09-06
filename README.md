@@ -29,6 +29,8 @@ npm install
 
 需要 [Godot 4.4+](https://godotengine.org/download)（编辑器命令行能跑 `godot`）。校长仍是 Node，不要用 Godot 当校长。
 
+会按城市冒天气和新闻气泡，并按天气穿衣服；和 Electron 同学同场时应能看见雨衣/围巾。
+
 用编辑器打开 `godot/project.godot`，或：
 
 ```bat
