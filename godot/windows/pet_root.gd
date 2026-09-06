@@ -674,9 +674,17 @@ func _refresh_dresses() -> void:
 func _dress_for(client_id: String) -> Dictionary:
 	if client_id.is_empty() or client_id == RoomClient.my_id():
 		return WeatherClient.last_dress
-	var cached: Variant = RoomClient.dresses.get(client_id, {})
-	if cached is Dictionary:
-		return cached
+	if RoomClient.dresses.has(client_id):
+		var cached: Variant = RoomClient.dresses[client_id]
+		if cached is Dictionary:
+			return cached
+	for person in RoomClient.home_people:
+		if String(person.get("clientId", "")) != client_id:
+			continue
+		var from_person: Variant = person.get("dress", {})
+		if from_person is Dictionary:
+			return from_person
+		break
 	return {}
 
 

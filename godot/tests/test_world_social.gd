@@ -19,6 +19,8 @@ func run() -> int:
 	failed += _check("no bubble hint", not source.contains("走近才看得到气泡"))
 	failed += _check("chat send", source.contains("RoomClient.send_chat"))
 	failed += _check("focus blocks walk", source.contains("_chat_focused"))
+	failed += _check("school WeatherDress overlay", source.contains("WeatherDress"))
+	failed += _check("school dress_updated", source.contains("dress_updated"))
 	var tscn := FileAccess.get_file_as_string("res://windows/world_window.tscn")
 	failed += _check("chat bar scene", tscn.contains("name=\"ChatBar\""))
 	failed += _check("chat input scene", tscn.contains("name=\"ChatInput\""))

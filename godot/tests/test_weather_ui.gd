@@ -33,6 +33,18 @@ func run() -> int:
 	)
 	failed += _check("self last_dress", pet_src.contains("last_dress"))
 	failed += _check("slot dresses lookup", pet_src.contains("dresses"))
+	failed += _check(
+		"slot dress falls back to person",
+		_dress_for_falls_back_to_person(pet_src)
+	)
+
+	var world_src := FileAccess.get_file_as_string("res://windows/world_window.gd")
+	failed += _check("school uses WeatherDress", world_src.contains("WeatherDress"))
+	failed += _check("school dress_updated", world_src.contains("dress_updated"))
+	failed += _check(
+		"school apply person or cache",
+		world_src.contains('get("dress"') or world_src.contains("person.dress")
+	)
 
 	var script: Variant = load("res://weather/weather_dress.gd")
 	if script == null or not script is Script or not script.can_instantiate():
@@ -79,6 +91,15 @@ func run() -> int:
 
 	overlay.free()
 	return failed
+
+
+func _dress_for_falls_back_to_person(source: String) -> bool:
+	var start := source.find("func _dress_for")
+	if start < 0:
+		return false
+	var nxt := source.find("\nfunc ", start + 1)
+	var body := source.substr(start, nxt - start if nxt > start else source.length() - start)
+	return body.contains("dresses") and body.contains("home_people") and body.contains('get("dress"')
 
 
 func _setup_tray_mentions_dress(source: String) -> bool:

@@ -235,11 +235,15 @@ func _ensure_bubble_signals() -> void:
 
 
 func show_bubble(payload: Dictionary) -> void:
+	var pet_window := get_window()
+	if pet_window == null or not pet_window.visible or pet_window.mode == Window.MODE_MINIMIZED:
+		return
 	if not is_instance_valid(_bubble):
 		_bubble = BUBBLE_SCRIPT.new()
 		add_child(_bubble)
 	_bubble.present(payload)
 	_position_bubble()
+	_bubble.show()
 
 
 func hide_bubble() -> void:

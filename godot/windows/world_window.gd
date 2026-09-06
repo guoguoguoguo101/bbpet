@@ -7,6 +7,7 @@ const PixelPetScene = preload("res://pet/pixel_pet.tscn")
 const SchoolLogic = preload("res://school/school_logic.gd")
 const SchoolSocial = preload("res://school/school_social.gd")
 const HomeLogic = preload("res://home/home_logic.gd")
+const WeatherDress = preload("res://weather/weather_dress.gd")
 const CAMERA_SCALE := 1.8
 
 @onready var _status: Label = $VBox/Status
@@ -57,6 +58,10 @@ func _ready() -> void:
 		RoomClient.chat_received.connect(_on_chat_received)
 	if not RoomClient.friends_changed.is_connected(_on_friends_changed_world):
 		RoomClient.friends_changed.connect(_on_friends_changed_world)
+	if not RoomClient.dress_updated.is_connected(_on_dress_updated):
+		RoomClient.dress_updated.connect(_on_dress_updated)
+	if not WeatherClient.weather_changed.is_connected(_on_weather_changed):
+		WeatherClient.weather_changed.connect(_on_weather_changed)
 
 
 func apply_snapshot(you: Dictionary, people: Array, place_id: String) -> void:
@@ -264,6 +269,7 @@ func _configure_pet(id: String, data: Dictionary) -> void:
 		pet = PixelPetScene.instantiate()
 		_map_root.add_child(pet)
 		_pet_nodes[id] = pet
+		_attach_dress(pet)
 	var species := String(data.get("species", "blob"))
 	if not PetTemplates.DEFAULT_COLORS.has(species):
 		species = "blob"
@@ -276,6 +282,7 @@ func _configure_pet(id: String, data: Dictionary) -> void:
 	pet.pixel_size = 2
 	pet.flip = data.get("facing", "r") == "l"
 	pet.redraw()
+	_apply_pet_dress(id, data, pet)
 	pet.mouse_filter = Control.MOUSE_FILTER_STOP
 	for conn in pet.gui_input.get_connections():
 		pet.gui_input.disconnect(conn.callable)
@@ -283,6 +290,61 @@ func _configure_pet(id: String, data: Dictionary) -> void:
 		pet.gui_input.connect(_on_self_pet_input)
 	else:
 		pet.gui_input.connect(_on_other_pet_input.bind(id))
+
+
+func _attach_dress(pet: Node) -> Control:
+	var overlay: Control = pet.get_node_or_null("WeatherDress")
+	if overlay != null:
+		return overlay
+	overlay = WeatherDress.new()
+	overlay.name = "WeatherDress"
+	overlay.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	pet.add_child(overlay)
+	return overlay
+
+
+func _dress_for(id: String, data: Dictionary) -> Dictionary:
+	if id == "self":
+		return WeatherClient.last_dress
+	if RoomClient.dresses.has(id):
+		var cached: Variant = RoomClient.dresses[id]
+		if cached is Dictionary:
+			return cached
+	var from_person: Variant = data.get("dress", {})
+	if from_person is Dictionary:
+		return from_person
+	return {}
+
+
+func _apply_pet_dress(id: String, data: Dictionary, pet: Node = null) -> void:
+	if pet == null:
+		pet = _pet_nodes.get(id)
+	if pet == null:
+		return
+	var overlay := _attach_dress(pet)
+	if overlay.has_method("apply"):
+		overlay.call("apply", _dress_for(id, data))
+	var pixel := 4
+	if pet.get("pixel_size") != null:
+		pixel = int(pet.pixel_size)
+	overlay.scale = Vector2(float(pixel) / 4.0, float(pixel) / 4.0)
+
+
+func _refresh_dresses() -> void:
+	if _pet_nodes.has("self") and not _you.is_empty():
+		_apply_pet_dress("self", _you)
+	for person in _others:
+		_apply_pet_dress(String(person.get("clientId", "")), person)
+
+
+func _on_dress_updated() -> void:
+	if visible:
+		_refresh_dresses()
+
+
+func _on_weather_changed(_info: Dictionary) -> void:
+	if visible:
+		_refresh_dresses()
 
 
 func _on_self_pet_input(event: InputEvent) -> void:

@@ -41,6 +41,14 @@ func run() -> int:
 	failed += _check("connects bubble_requested", source.contains("WeatherClient.bubble_requested"))
 	failed += _check("bubble window script", source.contains("res://windows/bubble_window.gd"))
 	failed += _check("clamps to usable rect", source.contains("screen_get_usable_rect"))
+	failed += _check(
+		"position bubble before show",
+		_show_bubble_positions_before_visible(source)
+	)
+	failed += _check(
+		"no bubble when pet hidden",
+		_show_bubble_skips_hidden_pet(source)
+	)
 
 	var bubble_script: Variant = load("res://windows/bubble_window.gd")
 	if bubble_script == null or not bubble_script is Script or not bubble_script.can_instantiate():
@@ -52,8 +60,11 @@ func run() -> int:
 	failed += _check("bubble transparent", bubble.transparent)
 	failed += _check("bubble always on top", bubble.always_on_top)
 	failed += _check("bubble unresizable", bubble.unresizable)
+	failed += _check("bubble unfocusable", bubble.unfocusable)
+	failed += _check("bubble starts hidden", bubble.visible == false)
 	failed += _check("bubble min size", bubble.size.x >= 220 and bubble.size.y >= 80)
 	var bubble_source := FileAccess.get_file_as_string("res://windows/bubble_window.gd")
+	failed += _check("bubble uses show not popup", not bubble_source.contains("popup()"))
 	failed += _check("bubble shell open", bubble_source.contains("OS.shell_open"))
 	failed += _check("bubble hold 8s", bubble_source.contains("8.0"))
 	failed += _check("bubble hold 16s", bubble_source.contains("16.0"))
@@ -89,6 +100,29 @@ func _open_friends_connects_before_opening(source: String) -> bool:
 	var connect := body.find("connect_room")
 	var open := body.find('open_panel("friends")')
 	return connect >= 0 and open >= 0 and connect < open
+
+
+func _show_bubble_positions_before_visible(source: String) -> bool:
+	var start := source.find("func show_bubble")
+	if start < 0:
+		return false
+	var nxt := source.find("\nfunc ", start + 1)
+	var body := source.substr(start, nxt - start if nxt > start else source.length() - start)
+	var pos := body.find("_position_bubble")
+	var shown := body.find(".show(")
+	return pos >= 0 and shown > pos and not body.contains("popup(")
+
+
+func _show_bubble_skips_hidden_pet(source: String) -> bool:
+	var start := source.find("func show_bubble")
+	if start < 0:
+		return false
+	var nxt := source.find("\nfunc ", start + 1)
+	var body := source.substr(start, nxt - start if nxt > start else source.length() - start)
+	var vis := body.find("visible")
+	var early := body.find("return")
+	var present := body.find("present")
+	return vis >= 0 and early >= 0 and present >= 0 and vis < early and early < present
 
 
 func _close_world_hides_without_leaving(source: String) -> bool:

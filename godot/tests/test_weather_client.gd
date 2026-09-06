@@ -28,6 +28,23 @@ func run() -> int:
 		wc.free()
 		return failed
 
+	var missing_current: Dictionary = wc.parse_weather_payload("北京", {})
+	failed += _check("missing current empty", missing_current.is_empty())
+	failed += _check(
+		"missing current no cold dress",
+		not _has_gear(missing_current, "scarf")
+		and not _has_gear(missing_current, "beanie")
+		and not _has_gear(missing_current, "raincoat")
+	)
+	var null_current: Dictionary = wc.parse_weather_payload("北京", {"current": null})
+	failed += _check("null current empty", null_current.is_empty())
+	failed += _check(
+		"null current no cold dress",
+		not _has_gear(null_current, "scarf")
+		and not _has_gear(null_current, "beanie")
+		and not _has_gear(null_current, "raincoat")
+	)
+
 	var info: Dictionary = wc.parse_weather_payload("北京", FIXTURE)
 	failed += _check("city name", info.get("cityName", "") == "北京")
 	failed += _check("temperature", int(info.get("temperature", -1)) == 26)
@@ -72,6 +89,10 @@ func run() -> int:
 		and source.contains("timezone=Asia/Shanghai")
 	)
 	failed += _check("send dress", source.contains("send_dress"))
+	failed += _check(
+		"fetch skips missing current",
+		_fetch_weather_skips_missing_current(source)
+	)
 	failed += _check("connected guard", source.contains("connected"))
 	failed += _check("uses dress_for", source.contains("dress_for"))
 	failed += _check("uses quiet_line", source.contains("quiet_line"))
@@ -97,6 +118,27 @@ func run() -> int:
 
 	wc.free()
 	return failed
+
+
+func _fetch_weather_skips_missing_current(source: String) -> bool:
+	var start := source.find("func _fetch_weather")
+	if start < 0:
+		return false
+	var nxt := source.find("\nfunc ", start + 1)
+	var body := source.substr(start, nxt - start if nxt > start else source.length() - start)
+	var current_at := body.find('get("current")')
+	var apply_at := body.find("apply_weather")
+	return (
+		current_at >= 0
+		and apply_at > current_at
+		and body.contains("quiet_bubble")
+		and body.contains("is Dictionary")
+	)
+
+
+func _has_gear(info: Dictionary, name: String) -> bool:
+	var gear: Variant = info.get("gear", [])
+	return gear is Array and gear.has(name)
 
 
 func _check(label: String, ok: bool) -> int:

@@ -220,6 +220,7 @@ func _handle_server_text(text: String) -> void:
 			_apply_friends(msg.get("home", {}))
 			_apply_home_bucket(msg.get("home", {}))
 			home_updated.emit()
+			_upload_local_dress()
 			if not pending_enter.is_empty():
 				enter_place(pending_enter)
 		"snapshot":
@@ -373,7 +374,9 @@ func _without_self(people: Array) -> Array:
 	var self_id := String(_you.get("clientId", ""))
 	for person in people:
 		if person is Dictionary and String(person.get("clientId", "")) != self_id:
-			result.append(person.duplicate(true))
+			var copy: Dictionary = person.duplicate(true)
+			_seed_person_dress(copy)
+			result.append(copy)
 	return result
 
 
@@ -381,6 +384,7 @@ func _upsert_person(person: Dictionary) -> void:
 	var client_id := String(person.get("clientId", ""))
 	if client_id.is_empty() or client_id == String(_you.get("clientId", "")):
 		return
+	_seed_person_dress(person)
 	for index in _people.size():
 		if String(_people[index].get("clientId", "")) == client_id:
 			_people[index] = person.duplicate(true)
@@ -430,6 +434,7 @@ func _upsert_home_person(person: Dictionary) -> void:
 	var client_id := String(person.get("clientId", ""))
 	if client_id.is_empty() or client_id == String(_you.get("clientId", "")):
 		return
+	_seed_person_dress(person)
 	for index in home_people.size():
 		if String(home_people[index].get("clientId", "")) == client_id:
 			home_people[index] = person.duplicate(true)
@@ -463,12 +468,45 @@ func _apply_home_pose(msg: Dictionary) -> void:
 	home_updated.emit()
 
 
+func _normalized_dress(raw: Dictionary) -> Dictionary:
+	var gear: Variant = raw.get("gear", [])
+	var fx: Variant = raw.get("fx", [])
+	return {
+		"gear": gear.duplicate() if gear is Array else [],
+		"fx": fx.duplicate() if fx is Array else [],
+	}
+
+
+func _seed_person_dress(person: Dictionary) -> void:
+	var client_id := String(person.get("clientId", ""))
+	if client_id.is_empty() or not person.has("dress"):
+		return
+	var raw: Variant = person.dress
+	if raw is Dictionary:
+		dresses[client_id] = _normalized_dress(raw)
+
+
+func _upload_local_dress() -> void:
+	var weather := _named_autoload("WeatherClient")
+	if weather == null:
+		return
+	var dress: Variant = weather.get("last_dress")
+	if dress is Dictionary and not dress.is_empty():
+		send_dress(dress)
+
+
+func _named_autoload(node_name: String) -> Node:
+	if is_inside_tree():
+		return get_node_or_null("/root/%s" % node_name)
+	return null
+
+
 func _apply_dress(msg: Dictionary) -> void:
 	var client_id := String(msg.get("clientId", ""))
 	var raw_dress: Variant = msg.get("dress", {})
 	if client_id.is_empty() or not raw_dress is Dictionary:
 		return
-	var next_dress: Dictionary = raw_dress.duplicate(true)
+	var next_dress: Dictionary = _normalized_dress(raw_dress)
 	dresses[client_id] = next_dress
 	for index in home_people.size():
 		var home_person: Dictionary = home_people[index]

@@ -34,9 +34,9 @@ func _ready() -> void:
 
 
 func parse_weather_payload(city_name: String, data: Dictionary) -> Dictionary:
-	var current: Variant = data.get("current", {})
+	var current: Variant = data.get("current")
 	if not current is Dictionary:
-		current = {}
+		return {}
 	var temperature := roundi(float(current.get("temperature_2m", 0)))
 	var code := int(current.get("weather_code", -1))
 	var is_day := int(current.get("is_day", 1)) != 0
@@ -133,7 +133,16 @@ func _fetch_weather(with_bubble: bool) -> void:
 		if with_bubble:
 			quiet_bubble()
 		return
-	var parsed: Dictionary = parse_weather_payload(str(settings.cityName), json.data)
+	var payload: Dictionary = json.data
+	if not payload.get("current") is Dictionary:
+		if with_bubble:
+			quiet_bubble()
+		return
+	var parsed: Dictionary = parse_weather_payload(str(settings.cityName), payload)
+	if parsed.is_empty():
+		if with_bubble:
+			quiet_bubble()
+		return
 	apply_weather(parsed)
 	if with_bubble:
 		request_bubble("weather", str(parsed.get("dressLine", "")))

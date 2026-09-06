@@ -12,6 +12,8 @@ var _url := ""
 
 
 func _init() -> void:
+	visible = false
+	unfocusable = true
 	borderless = true
 	transparent = true
 	always_on_top = true
@@ -26,7 +28,6 @@ func present(payload: Dictionary) -> void:
 	_label.text = str(payload.get("text", ""))
 	_link.visible = not _url.is_empty()
 	_fit_size()
-	popup()
 	var hold := HOLD_WITH_URL if not _url.is_empty() else HOLD_NO_URL
 	_hold.start(hold)
 

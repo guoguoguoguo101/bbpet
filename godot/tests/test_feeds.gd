@@ -38,6 +38,22 @@ func run() -> int:
 	failed += _check("pick first fallback", WeatherFeeds.pick_item([first]) == first)
 	failed += _check("pick empty", WeatherFeeds.pick_item([]).is_empty())
 	failed += _check("three feeds", WeatherFeeds.FEEDS.size() == 3)
+	if WeatherFeeds.FEEDS.size() == 3:
+		failed += _check(
+			"sspai feed",
+			WeatherFeeds.FEEDS[0].source == "少数派"
+			and WeatherFeeds.FEEDS[0].url == "https://sspai.com/feed"
+		)
+		failed += _check(
+			"solidot feed",
+			WeatherFeeds.FEEDS[1].source == "Solidot"
+			and WeatherFeeds.FEEDS[1].url == "https://www.solidot.org/index.rss"
+		)
+		failed += _check(
+			"people feed",
+			WeatherFeeds.FEEDS[2].source == "人民网"
+			and WeatherFeeds.FEEDS[2].url == "http://www.people.com.cn/rss/politics.xml"
+		)
 	return failed
 
 

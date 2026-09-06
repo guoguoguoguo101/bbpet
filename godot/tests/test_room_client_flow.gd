@@ -21,7 +21,7 @@ func run() -> int:
 		+ '"home":{"placeId":"home:x","people":[{"clientId":"y","name":"乙"}],"board":[],"friends":[]}}'
 	)
 	failed += _check("welcome home people", rc.home_people.size() == 1)
-	var weather_dress := {"gear": "raincoat", "fx": "rain"}
+	var weather_dress := {"gear": ["raincoat"], "fx": ["rain"]}
 	rc.send_dress(weather_dress)
 	failed += _check(
 		"dress payload",
@@ -37,10 +37,10 @@ func run() -> int:
 	failed += _check("disconnect clears home people", rc.home_people.is_empty())
 	failed += _check("disconnect clears home id", rc.home_id().is_empty())
 	rc.last_sent = {"type": "sentinel"}
-	rc.send_dress({"gear": "hat", "fx": ""})
+	rc.send_dress({"gear": ["hat"], "fx": []})
 	failed += _check("disconnected dress not sent", rc.last_sent.type == "sentinel")
 	rc.connected = true
-	rc.send_dress({"gear": "hat", "fx": ""})
+	rc.send_dress({"gear": ["hat"], "fx": []})
 	failed += _check("dress without home not sent", rc.last_sent.type == "sentinel")
 	rc._handle_server_text(
 		'{"type":"welcome","you":{"clientId":"x","homeId":"home:x","placeId":"home:x"},'
@@ -61,9 +61,13 @@ func run() -> int:
 	failed += _check("home people from home snap", rc.home_people.size() == 1)
 	failed += _check("home must not open world", SchoolSocial.should_open_world("home:x") == false)
 	rc._handle_server_text(
-		'{"type":"join","placeId":"home:x","person":{"clientId":"z","name":"丙"}}'
+		'{"type":"join","placeId":"home:x","person":{"clientId":"z","name":"丙","dress":{"gear":["umbrella"]}}}'
 	)
 	failed += _check("home join while at school", rc.home_people.size() == 2)
+	failed += _check(
+		"home join seeds dress",
+		rc.dresses.get("z", {}) == {"gear": ["umbrella"], "fx": []}
+	)
 	rc.go_home("y")
 	failed += _check("visit enter", rc.last_enter_requested == "home:y")
 	rc.send_emote("hug", "y")
@@ -102,9 +106,13 @@ func run() -> int:
 	rc._handle_server_text(
 		'{"type":"snapshot","you":{"clientId":"x","x":384,"y":348,"facing":"r",'
 		+ '"species":"blob","name":"豆豆","colors":{},"homeId":"home:x"},'
-		+ '"snapshot":{"placeId":"school:campus","people":[{"clientId":"y","name":"乙"}],"board":[],"friends":[{"clientId":"y","name":"乙","online":true}]}}'
+		+ '"snapshot":{"placeId":"school:campus","people":[{"clientId":"y","name":"乙","dress":{"gear":["scarf"],"fx":["snow"]}}],"board":[],"friends":[{"clientId":"y","name":"乙","online":true}]}}'
 	)
 	failed += _check("campus snapshot", saw.campus)
+	failed += _check(
+		"school snapshot seeds dress",
+		rc.dresses.get("y", {}) == {"gear": ["scarf"], "fx": ["snow"]}
+	)
 	rc.leave_school()
 	failed += _check("leave away", rc.last_enter_requested == "away")
 	failed += _check("still connected", rc.connected == true)
@@ -118,15 +126,20 @@ func run() -> int:
 	var snapshots_before: int = saw.snapshots
 	var place_before: String = rc.place_id
 	rc._handle_server_text(
-		'{"type":"dress","clientId":"y","dress":{"gear":"raincoat","fx":"rain"}}'
+		'{"type":"dress","clientId":"y","dress":{"gear":["raincoat"],"fx":["rain"]}}'
 	)
 	failed += _check("dress stored", rc.dresses.get("y", {}) == weather_dress)
+	rc._handle_server_text('{"type":"dress","clientId":"z","dress":{}}')
+	failed += _check(
+		"dress missing gear fx",
+		rc.dresses.get("z", {}) == {"gear": [], "fx": []}
+	)
 	failed += _check(
 		"dress patches people",
 		rc.home_people[0].get("dress", {}) == weather_dress
 		and rc._people[0].get("dress", {}) == weather_dress
 	)
-	failed += _check("dress signal", saw.dress == 1)
+	failed += _check("dress signal", saw.dress == 2)
 	failed += _check(
 		"dress keeps navigation",
 		rc.place_id == place_before and saw.snapshots == snapshots_before
@@ -158,6 +171,8 @@ func run() -> int:
 	failed += _check("error text", rc.status_text.contains("学校人满了"))
 	rc.disconnect_room()
 	failed += _check("disconnect clears dresses", rc.dresses.is_empty())
+	var room_src := FileAccess.get_file_as_string("res://autoload/room_client.gd")
+	failed += _check("welcome uploads last dress", room_src.contains("last_dress"))
 	rc.free()
 	return failed
 
