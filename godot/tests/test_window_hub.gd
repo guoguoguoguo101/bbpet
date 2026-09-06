@@ -36,6 +36,31 @@ func run() -> int:
 		_open_friends_connects_before_opening(source)
 	)
 	failed += _check("school snapshot gate", source.contains("SchoolSocial.should_open_world"))
+	failed += _check("show bubble API", source.contains("func show_bubble"))
+	failed += _check("hide bubble API", source.contains("func hide_bubble"))
+	failed += _check("connects bubble_requested", source.contains("WeatherClient.bubble_requested"))
+	failed += _check("bubble window script", source.contains("res://windows/bubble_window.gd"))
+	failed += _check("clamps to usable rect", source.contains("screen_get_usable_rect"))
+
+	var bubble_script: Variant = load("res://windows/bubble_window.gd")
+	if bubble_script == null or not bubble_script is Script or not bubble_script.can_instantiate():
+		push_error("window_hub: missing bubble window")
+		return failed + 1
+	var bubble: Window = bubble_script.new()
+	failed += _check("bubble is Window", bubble is Window)
+	failed += _check("bubble borderless", bubble.borderless)
+	failed += _check("bubble transparent", bubble.transparent)
+	failed += _check("bubble always on top", bubble.always_on_top)
+	failed += _check("bubble unresizable", bubble.unresizable)
+	failed += _check("bubble min size", bubble.size.x >= 220 and bubble.size.y >= 80)
+	var bubble_source := FileAccess.get_file_as_string("res://windows/bubble_window.gd")
+	failed += _check("bubble shell open", bubble_source.contains("OS.shell_open"))
+	failed += _check("bubble hold 8s", bubble_source.contains("8.0"))
+	failed += _check("bubble hold 16s", bubble_source.contains("16.0"))
+	failed += _check("bubble wrap width", bubble_source.contains("240"))
+	failed += _check("bubble autowrap", bubble_source.contains("autowrap"))
+	failed += _check("bubble label", bubble_source.contains("Label"))
+	bubble.free()
 	return failed
 
 

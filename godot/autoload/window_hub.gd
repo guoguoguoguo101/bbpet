@@ -4,6 +4,7 @@ signal panel_toggled
 
 const PANEL_SCENE = preload("res://windows/panel_window.tscn")
 const WORLD_SCENE = preload("res://windows/world_window.tscn")
+const BUBBLE_SCRIPT = preload("res://windows/bubble_window.gd")
 const SchoolSocial = preload("res://school/school_social.gd")
 const HomeLogic = preload("res://home/home_logic.gd")
 const MENU_SHOW := 1
@@ -13,10 +14,12 @@ const MENU_QUIT := 3
 var _has_tray := false
 var _panel: Window
 var _world: Window
+var _bubble: Window
 
 
 func _ready() -> void:
 	_ensure_room_signals()
+	_ensure_bubble_signals()
 	if DisplayServer.get_name() == "headless":
 		return
 	_setup_tray()
@@ -224,6 +227,40 @@ func _position_panel() -> void:
 		_panel.position = right
 	else:
 		_panel.position = Vector2i(pet_window.position.x - _panel.size.x - 8, pet_window.position.y)
+
+
+func _ensure_bubble_signals() -> void:
+	if not WeatherClient.bubble_requested.is_connected(show_bubble):
+		WeatherClient.bubble_requested.connect(show_bubble)
+
+
+func show_bubble(payload: Dictionary) -> void:
+	if not is_instance_valid(_bubble):
+		_bubble = BUBBLE_SCRIPT.new()
+		add_child(_bubble)
+	_bubble.present(payload)
+	_position_bubble()
+
+
+func hide_bubble() -> void:
+	if not is_instance_valid(_bubble):
+		_bubble = null
+		return
+	_bubble.dismiss()
+
+
+func _position_bubble() -> void:
+	if not is_instance_valid(_bubble):
+		return
+	var pet_window := get_tree().root
+	var usable := DisplayServer.screen_get_usable_rect()
+	var pos := Vector2i(
+		pet_window.position.x - _bubble.size.x - 8,
+		pet_window.position.y
+	)
+	pos.x = clampi(pos.x, usable.position.x, usable.end.x - _bubble.size.x)
+	pos.y = clampi(pos.y, usable.position.y, usable.end.y - _bubble.size.y)
+	_bubble.position = pos
 
 
 func hide_pet() -> void:
