@@ -2,6 +2,7 @@ extends Control
 
 const PixelPetScene = preload("res://pet/pixel_pet.tscn")
 const HomeLogic = preload("res://home/home_logic.gd")
+const WeatherDress = preload("res://weather/weather_dress.gd")
 
 const PET_SIZE := Vector2i(64, 86)
 const PET_OFFSET := Vector2(0, 11)
@@ -58,6 +59,7 @@ var _bar_input: LineEdit
 var _bar_close: Button
 var _emote_menu: Control
 var _emote_buttons: Array[Button] = []
+var _solo_dress: Control
 
 
 func _ready() -> void:
@@ -79,13 +81,18 @@ func _ready() -> void:
 
 	context_menu.add_item("隐藏", MENU_HIDE)
 	context_menu.add_item("退出", MENU_QUIT)
+	context_menu.always_on_top = true
 	context_menu.id_pressed.connect(_on_context_menu_id_pressed)
 
 	_build_gathering()
+	_solo_dress = _attach_dress(pixel_pet)
 	RoomClient.home_updated.connect(_on_home_updated)
 	RoomClient.emote_received.connect(_on_emote_received)
 	RoomClient.disconnected.connect(_on_room_lost)
 	RoomClient.connect_failed.connect(_on_connect_failed)
+	WeatherClient.weather_changed.connect(_on_weather_changed)
+	RoomClient.dress_updated.connect(_on_dress_updated)
+	_refresh_dresses()
 
 	_blink_loop()
 	_gathering_loop()
@@ -425,6 +432,9 @@ func _configure_slot(view: Dictionary, at: Vector2) -> void:
 	pet.pose = String(view.pose)
 	pet.pixel_size = SLOT_PIXEL
 	pet.redraw()
+	var overlay: Control = slot.get_node_or_null("WeatherDress")
+	if overlay != null and overlay.has_method("apply"):
+		overlay.call("apply", _dress_for(String(view.id)))
 	var plate: Label = slot.get_node("Plate")
 	plate.text = String(view.name)
 
@@ -448,6 +458,8 @@ func _make_slot(id: String) -> Control:
 	pet.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	pet.position = Vector2(SLOT_PET_LEFT, SLOT_PET_TOP)
 	slot.add_child(pet)
+	var overlay := _attach_dress(slot)
+	overlay.position = Vector2(SLOT_PET_LEFT, SLOT_PET_TOP)
 
 	var plate := _slot_label("Plate", LOG_TEXT)
 	plate.position = Vector2(0.0, HomeLogic.SLOT_H - PLATE_H)
@@ -641,6 +653,57 @@ func _on_connect_failed(_reason: String) -> void:
 	_on_room_lost()
 
 
+func _on_weather_changed(_info: Dictionary) -> void:
+	_refresh_dresses()
+
+
+func _on_dress_updated() -> void:
+	_refresh_dresses()
+
+
+func _refresh_dresses() -> void:
+	if is_instance_valid(_solo_dress) and _solo_dress.has_method("apply"):
+		_solo_dress.call("apply", WeatherClient.last_dress)
+	for id in _slots:
+		var overlay: Control = _slots[id].get_node_or_null("WeatherDress")
+		if overlay != null and overlay.has_method("apply"):
+			overlay.call("apply", _dress_for(String(id)))
+	update_passthrough()
+
+
+func _dress_for(client_id: String) -> Dictionary:
+	if client_id.is_empty() or client_id == RoomClient.my_id():
+		return WeatherClient.last_dress
+	var cached: Variant = RoomClient.dresses.get(client_id, {})
+	if cached is Dictionary:
+		return cached
+	return {}
+
+
+func _attach_dress(parent: Node) -> Control:
+	var overlay: Control = parent.get_node_or_null("WeatherDress")
+	if overlay != null:
+		return overlay
+	overlay = WeatherDress.new()
+	overlay.name = "WeatherDress"
+	overlay.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	parent.add_child(overlay)
+	return overlay
+
+
+func _dress_points(overlay: Control, origin: Vector2) -> Array[Vector2]:
+	var points: Array[Vector2] = []
+	if overlay == null or not overlay.has_method("opaque_rects"):
+		return points
+	for rect in overlay.call("opaque_rects"):
+		var at: Vector2 = origin + overlay.position + rect.position
+		points.append(at)
+		points.append(Vector2(at.x + rect.size.x, at.y))
+		points.append(Vector2(at.x, at.y + rect.size.y))
+		points.append(at + rect.size)
+	return points
+
+
 func update_passthrough() -> void:
 	if _gathering:
 		_apply_hull(_gathering_points())
@@ -649,7 +712,9 @@ func update_passthrough() -> void:
 	if image == null:
 		get_window().mouse_passthrough = false
 		return
-	_apply_hull(_image_points(image, pixel_pet.position))
+	var points := _image_points(image, pixel_pet.position)
+	points.append_array(_dress_points(_solo_dress, pixel_pet.position))
+	_apply_hull(points)
 
 
 func _gathering_points() -> Array[Vector2]:
@@ -658,9 +723,11 @@ func _gathering_points() -> Array[Vector2]:
 		var slot: Control = _slots[id]
 		var pet: PixelPet = slot.get_node("Pet")
 		var image: Image = pet.current_image()
-		if image == null:
-			continue
-		points.append_array(_image_points(image, slot.position + pet.position))
+		if image != null:
+			points.append_array(_image_points(image, slot.position + pet.position))
+		var overlay: Control = slot.get_node_or_null("WeatherDress")
+		if overlay != null:
+			points.append_array(_dress_points(overlay, slot.position))
 	for rect in _ui_rects():
 		points.append(rect.position)
 		points.append(Vector2(rect.end.x, rect.position.y))
