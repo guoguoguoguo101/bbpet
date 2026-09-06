@@ -11,6 +11,7 @@ boot_splash/show_image=false
 [autoload]
 AppState="*res://autoload/app_state.gd"
 RoomClient="*res://autoload/room_client.gd"
+WeatherClient="*res://autoload/weather_client.gd"
 WindowHub="*res://autoload/window_hub.gd"
 
 [display]
@@ -21,6 +22,7 @@ window/size/borderless=true
 window/size/always_on_top=true
 window/size/transparent=true
 window/per_pixel_transparency/allowed=true
+window/subwindows/embed_subwindows=false
 
 [rendering]
 renderer/rendering_method="gl_compatibility"

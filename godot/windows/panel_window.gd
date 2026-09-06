@@ -306,6 +306,7 @@ func _confirm_wizard(name_input: LineEdit, city_input: OptionButton, error_label
 	_app_state().set_city(city_id)
 	_app_state().mark_onboarded()
 	_app_state().save_to(STATE_PATH)
+	get_node("/root/WeatherClient").refresh_after_settings()
 	_window_hub().refresh_pet()
 	_window_hub().close_panel()
 
@@ -331,6 +332,7 @@ func _save_settings(
 	_app_state().set_city(city_id)
 	_app_state().set_push_interval_min(int(push_input.text))
 	_app_state().save_to(STATE_PATH)
+	get_node("/root/WeatherClient").refresh_after_settings()
 	_window_hub().refresh_pet()
 	var room_client := _room_client()
 	if room_client.connected:

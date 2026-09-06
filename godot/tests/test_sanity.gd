@@ -6,6 +6,7 @@ const REQUIRED_LINES := [
 	"window/size/viewport_height=86",
 	"window/size/transparent=true",
 	"window/per_pixel_transparency/allowed=true",
+	"window/subwindows/embed_subwindows=false",
 ]
 
 func run() -> int:
