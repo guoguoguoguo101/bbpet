@@ -70,6 +70,7 @@ func run() -> int:
 	failed += _check("quiet text", not quiet_text.is_empty())
 	failed += _check("quiet kind", bubbled.payload.get("kind", "") == "info")
 	failed += _check("quiet url", bubbled.payload.get("url", "missing") == "")
+	failed += _check("quiet talks", bubbled.payload.get("talk", false) == true)
 
 	wc.apply_weather(info)
 	failed += _check("last weather city", wc.last_weather.get("cityName", "") == "北京")
@@ -79,6 +80,10 @@ func run() -> int:
 	var source := FileAccess.get_file_as_string("res://autoload/weather_client.gd")
 	failed += _check("headless skip", source.contains('DisplayServer.get_name()=="headless"'))
 	failed += _check("weather interval", source.contains("20 * 60") or source.contains("20*60"))
+	failed += _check(
+		"weather timer talks",
+		_fn_contains(source, "_on_weather_timer", "_fetch_weather(true)")
+	)
 	failed += _check("push interval", source.contains("pushIntervalMin"))
 	failed += _check(
 		"open meteo url",
@@ -134,6 +139,15 @@ func _fetch_weather_skips_missing_current(source: String) -> bool:
 		and body.contains("quiet_bubble")
 		and body.contains("is Dictionary")
 	)
+
+
+func _fn_contains(source: String, fn: String, needle: String) -> bool:
+	var start := source.find("func %s" % fn)
+	if start < 0:
+		return false
+	var nxt := source.find("\nfunc ", start + 1)
+	var body := source.substr(start, nxt - start if nxt > start else source.length() - start)
+	return body.contains(needle)
 
 
 func _has_gear(info: Dictionary, name: String) -> bool:

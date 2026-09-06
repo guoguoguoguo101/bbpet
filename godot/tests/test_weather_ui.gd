@@ -28,6 +28,8 @@ func run() -> int:
 		and not _setup_tray_mentions_dress(hub_src)
 	)
 	failed += _check("self last_dress", pet_src.contains("last_dress"))
+	failed += _check("talking push API", pet_src.contains("func set_talking_push"))
+	failed += _check("pose line bubble", pet_src.contains("func _maybe_pose_bubble"))
 	failed += _check("slot dresses lookup", pet_src.contains("dresses"))
 	failed += _check(
 		"slot dress falls back to person",

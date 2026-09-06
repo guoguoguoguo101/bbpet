@@ -5,12 +5,22 @@ const HomeLogic = preload("res://home/home_logic.gd")
 const WeatherDress = preload("res://weather/weather_dress.gd")
 const IdleLife = preload("res://pet/idle_life.gd")
 const BbPetTheme = preload("res://ui/bbpet_theme.gd")
+const GameOffers = preload("res://game/offers.gd")
 
 const PET_SIZE := Vector2i(64, 86)
 const PET_OFFSET := Vector2(0, 11)
 const DRAG_THRESHOLD := 4.0
 const MENU_HIDE := 0
 const MENU_QUIT := 1
+const MENU_HUB := 30
+const MENU_SCHOOL := 31
+const MENU_HOME := 32
+const MENU_FRIENDS := 33
+const MENU_CHAT := 34
+const MENU_WX_NOW := 35
+const MENU_NEWS_NOW := 36
+const MENU_SETTINGS := 37
+const MENU_DEMO_OFF := 40
 const MENU_IDLE := 10
 const MENU_TALK := 11
 const MENU_DRINK := 12
@@ -18,6 +28,9 @@ const MENU_SLEEP := 13
 const MENU_PHONE := 14
 const MENU_WX_SUN := 20
 const MENU_WX_RAIN := 21
+const OFFER_W := 188.0
+const OFFER_YES := "好呀"
+const OFFER_NO := "先不要"
 const SLOT_PIXEL := 4
 const SLOT_PET_LEFT := 4.0
 const SLOT_PET_TOP := 14.0
@@ -70,6 +83,10 @@ var _emote_menu: Control
 var _emote_buttons: Array[Button] = []
 var _solo_dress: Control
 var _pose_lock_until := 0
+var _offer_root: Control
+var _last_bubble_pose := ""
+var _pet_demo_ids := {}
+var _talking_push := false
 var _airborne_id := ""
 var _key_pid := -1
 var _typing_until := 0
@@ -93,22 +110,13 @@ func _ready() -> void:
 	pixel_pet.pixel_size = 4
 	_set_pose("idle")
 
-	context_menu.add_item("发呆", MENU_IDLE)
-	context_menu.add_item("说话", MENU_TALK)
-	context_menu.add_item("喝水", MENU_DRINK)
-	context_menu.add_item("睡觉", MENU_SLEEP)
-	context_menu.add_item("刷手机", MENU_PHONE)
-	context_menu.add_separator()
-	context_menu.add_item("晴天", MENU_WX_SUN)
-	context_menu.add_item("下雨", MENU_WX_RAIN)
-	context_menu.add_separator()
-	context_menu.add_item("隐藏", MENU_HIDE)
-	context_menu.add_item("退出", MENU_QUIT)
+	_build_context_menu()
 	context_menu.always_on_top = true
 	BbPetTheme.apply_popup(context_menu)
 	context_menu.id_pressed.connect(_on_context_menu_id_pressed)
 
 	_build_gathering()
+	_build_offer()
 	_solo_dress = _attach_dress(pixel_pet)
 	RoomClient.home_updated.connect(_on_home_updated)
 	RoomClient.emote_received.connect(_on_emote_received)
@@ -116,6 +124,7 @@ func _ready() -> void:
 	RoomClient.connect_failed.connect(_on_connect_failed)
 	WeatherClient.weather_changed.connect(_on_weather_changed)
 	RoomClient.dress_updated.connect(_on_dress_updated)
+	RoomClient.game_updated.connect(_on_game_updated_pet)
 	_refresh_dresses()
 
 	_blink_loop()
@@ -183,7 +192,34 @@ func _on_right_click(slot_id: String) -> void:
 func _set_pose(next_pose: String) -> void:
 	pixel_pet.pose = next_pose
 	pixel_pet.redraw()
+	_maybe_send_pose()
+	_maybe_pose_bubble()
 	update_passthrough()
+
+
+func _maybe_send_pose() -> void:
+	if not _gathering:
+		return
+	RoomClient.send_pose(_current_pose(), int(pixel_pet.look_x), int(pixel_pet.look_y))
+
+
+func _maybe_pose_bubble() -> void:
+	if _gathering:
+		return
+	var pose := _current_pose()
+	if pose == "idle" or pose == "blink" or pose == "talk":
+		_last_bubble_pose = pose
+		return
+	if pose == "drink" and IdleLife.has_juice(WeatherClient.last_dress):
+		_last_bubble_pose = pose
+		return
+	if pose == _last_bubble_pose:
+		return
+	_last_bubble_pose = pose
+	var line := IdleLife.line_for_pose(pose)
+	if line.is_empty():
+		return
+	WindowHub.show_bubble({"kind": "info", "text": line})
 
 
 func _current_pose() -> String:
@@ -191,12 +227,21 @@ func _current_pose() -> String:
 
 
 func _autonomous() -> bool:
-	return not _gathering and Time.get_ticks_msec() >= _pose_lock_until
+	return not _gathering and not _talking_push and Time.get_ticks_msec() >= _pose_lock_until
 
 
 func _lock_pose(pose: String, hold_ms: int = IdleLife.ACTION_HOLD_MS) -> void:
 	_pose_lock_until = Time.get_ticks_msec() + hold_ms
 	_set_pose(pose)
+
+
+func set_talking_push(on: bool) -> void:
+	_talking_push = on
+	if on:
+		_set_pose("talk")
+		return
+	if _current_pose() == "talk":
+		_set_pose("idle")
 
 
 func _blink_loop() -> void:
@@ -270,6 +315,10 @@ func _gathering_loop() -> void:
 			return
 		if _gathering:
 			_refresh_gathering()
+		else:
+			_refresh_offer()
+			if _offer_showing():
+				_layout_solo_offer()
 
 
 func _build_gathering() -> void:
@@ -394,7 +443,11 @@ func _refresh_gathering() -> void:
 	pixel_pet.visible = not gather
 	_gathering_root.visible = gather
 	if not gather:
-		_shrink_to_pet()
+		_refresh_offer()
+		if _offer_showing():
+			_layout_solo_offer()
+		else:
+			_shrink_to_pet()
 		return
 
 	_track_chat_bubble()
@@ -406,6 +459,7 @@ func _refresh_gathering() -> void:
 	var yard: Dictionary = HomeLogic.yard_metrics(guests.size(), _chatting, log_n)
 	var signature := _layout_key(views, yard)
 	if signature == _layout_signature:
+		_refresh_offer()
 		return
 	_layout_signature = signature
 
@@ -414,6 +468,8 @@ func _refresh_gathering() -> void:
 	_refresh_bar(you, guests, my_id, yard)
 	_refresh_log(yard)
 	_refresh_emote_menu(views, yard)
+	_refresh_offer()
+	_maybe_send_pose()
 	update_passthrough()
 
 
@@ -820,6 +876,11 @@ func update_passthrough() -> void:
 		return
 	var points := _image_points(image, pixel_pet.position)
 	points.append_array(_dress_points(_solo_dress, pixel_pet.position))
+	for rect in _ui_rects():
+		points.append(rect.position)
+		points.append(Vector2(rect.end.x, rect.position.y))
+		points.append(Vector2(rect.position.x, rect.end.y))
+		points.append(rect.end)
 	_apply_hull(points)
 
 
@@ -850,6 +911,8 @@ func _ui_rects() -> Array[Rect2]:
 		rects.append(Rect2(_log_root.position, _log_root.size))
 	if is_instance_valid(_emote_menu) and _emote_menu.visible:
 		rects.append(Rect2(_emote_menu.position, _emote_menu.size))
+	if is_instance_valid(_offer_root) and _offer_root.visible:
+		rects.append(Rect2(_offer_root.position, _offer_root.size))
 	return rects
 
 
@@ -915,26 +978,234 @@ func _cross(origin: Vector2, a: Vector2, b: Vector2) -> float:
 	return (a - origin).cross(b - origin)
 
 
+func _build_context_menu() -> void:
+	context_menu.clear()
+	for child in context_menu.get_children():
+		child.free()
+	context_menu.add_item("今天去哪", MENU_HUB)
+	context_menu.add_item("去上学", MENU_SCHOOL)
+	context_menu.add_item("回家", MENU_HOME)
+	context_menu.add_item("好友", MENU_FRIENDS)
+	context_menu.add_item("聊一聊", MENU_CHAT)
+	context_menu.add_item("现在看看天气", MENU_WX_NOW)
+	context_menu.add_item("现在看看新闻", MENU_NEWS_NOW)
+	context_menu.add_item("设置", MENU_SETTINGS)
+	context_menu.add_separator()
+	var actions := PopupMenu.new()
+	context_menu.add_child(actions)
+	var poses := PopupMenu.new()
+	var slack := PopupMenu.new()
+	var weather := PopupMenu.new()
+	actions.add_child(poses)
+	actions.add_child(slack)
+	actions.add_child(weather)
+	_fill_pet_demo(poses, [
+		["idle", "发呆"], ["look-right", "看右边"], ["look-left", "看左边"], ["blink", "眨眼"],
+		["talk", "说话"], ["drink", "喝水"], ["sleep", "睡觉"], ["wake", "伸懒腰"], ["type", "打字"],
+	], 100)
+	_fill_pet_demo(slack, [
+		["phone", "刷手机"], ["snack", "偷吃"], ["peek", "张望"], ["game", "打游戏"],
+		["coffee", "喝咖啡"], ["toilet", "上厕所"],
+	], 200)
+	_fill_pet_demo(weather, [
+		["wx-sun", "☀️ 晴天"], ["wx-hot", "🥵 炎热"], ["wx-drizzle", "🌦️ 毛毛雨 · 伞"],
+		["wx-rain", "🌧️ 下雨 · 雨衣"], ["wx-storm", "⛈️ 雷暴 · 发抖"], ["wx-snow", "🌨️ 下雪 · 雪人"],
+		["wx-cold", "☁️ 寒冷 · 围巾帽"], ["wx-fog", "🌫️ 有雾"], ["wx-night", "🌙 晚上 · 星星"],
+		["wx-wind", "💨 大风 · 站稳"], ["wx-partly", "⛅ 多云"], ["wx-overcast", "☁️ 阴天"],
+	], 300)
+	actions.add_submenu_node_item("待机动作", poses)
+	actions.add_submenu_node_item("摸鱼", slack)
+	actions.add_submenu_node_item("天气装扮", weather)
+	actions.add_separator()
+	actions.add_item("恢复待机", MENU_DEMO_OFF)
+	actions.id_pressed.connect(_on_context_menu_id_pressed)
+	poses.id_pressed.connect(_on_pet_demo_id)
+	slack.id_pressed.connect(_on_pet_demo_id)
+	weather.id_pressed.connect(_on_pet_demo_id)
+	context_menu.add_submenu_node_item("动作", actions)
+	context_menu.add_separator()
+	context_menu.add_item("隐藏", MENU_HIDE)
+	context_menu.add_item("退出", MENU_QUIT)
+
+
+func _fill_pet_demo(menu: PopupMenu, items: Array, id_base: int) -> void:
+	for index in items.size():
+		var entry: Array = items[index]
+		menu.add_item(String(entry[1]), id_base + index)
+		_pet_demo_ids[id_base + index] = String(entry[0])
+
+
+func _on_pet_demo_id(id: int) -> void:
+	if _pet_demo_ids.has(id):
+		play_demo(String(_pet_demo_ids[id]))
+
+
+func play_demo(id: String) -> void:
+	if id == "off":
+		pixel_pet.look_x = 0
+		pixel_pet.look_y = 0
+		WindowHub.hide_bubble()
+		_lock_pose("idle")
+		WeatherClient.refresh_after_settings()
+		return
+	if id == "look-right" or id == "look-left":
+		pixel_pet.look_x = 1 if id == "look-right" else -1
+		pixel_pet.look_y = 0
+		_lock_pose("idle")
+		_last_bubble_pose = ""
+		var line := IdleLife.line_for_pose(id)
+		if not line.is_empty() and not _gathering:
+			WindowHub.show_bubble({"kind": "info", "text": line})
+		return
+	if id.begins_with("wx-"):
+		var kind := id.trim_prefix("wx-")
+		var info: Dictionary = IdleLife.demo_weather(kind)
+		WeatherClient.apply_weather(info, false)
+		_lock_pose("drink" if kind == "sun" or kind == "hot" else "idle")
+		if not _gathering:
+			WindowHub.show_bubble({"kind": "weather", "text": str(info.get("dressLine", ""))})
+		return
+	pixel_pet.look_x = 0
+	pixel_pet.look_y = 0
+	_lock_pose(id)
+
+
+func _build_offer() -> void:
+	_offer_root = Control.new()
+	_offer_root.name = "OfferStack"
+	_offer_root.mouse_filter = Control.MOUSE_FILTER_STOP
+	_offer_root.visible = false
+	add_child(_offer_root)
+
+
+func _offer_showing() -> bool:
+	return is_instance_valid(_offer_root) and _offer_root.visible
+
+
+func _on_game_updated_pet(_game: Dictionary) -> void:
+	_refresh_offer()
+	if not _gathering and _offer_showing():
+		_layout_solo_offer()
+	elif not _gathering and not _offer_showing():
+		_shrink_to_pet()
+	update_passthrough()
+
+
+func _refresh_offer() -> void:
+	if _offer_root == null:
+		return
+	for child in _offer_root.get_children():
+		child.free()
+	var now_ms := int(Time.get_unix_time_from_system() * 1000.0)
+	var offers: Array = GameOffers.collect_offers(RoomClient.game, now_ms)
+	if offers.is_empty():
+		_offer_root.visible = false
+		_offer_root.size = Vector2.ZERO
+		return
+	var offer: Dictionary = offers[0]
+	_offer_root.visible = true
+	var card := PanelContainer.new()
+	BbPetTheme.apply_panel(card)
+	card.custom_minimum_size = Vector2(OFFER_W, 0)
+	_offer_root.add_child(card)
+	var box := VBoxContainer.new()
+	box.add_theme_constant_override("separation", 4)
+	card.add_child(box)
+	var stamp := Label.new()
+	stamp.text = String(offer.get("stamp", ""))
+	BbPetTheme.apply_hint(stamp)
+	box.add_child(stamp)
+	var title := Label.new()
+	title.text = String(offer.get("title", ""))
+	title.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	BbPetTheme.apply_heading(title)
+	box.add_child(title)
+	var body := Label.new()
+	body.text = String(offer.get("body", ""))
+	body.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	BbPetTheme.apply_hint(body)
+	box.add_child(body)
+	var seconds: int = GameOffers.offer_seconds(offer, now_ms)
+	var meter := Label.new()
+	meter.text = "%ds" % seconds
+	BbPetTheme.apply_hint(meter)
+	box.add_child(meter)
+	var actions: Array = offer.get("actions", [])
+	if not actions.is_empty():
+		var row := HBoxContainer.new()
+		row.add_theme_constant_override("separation", 6)
+		box.add_child(row)
+		for action in actions:
+			if not action is Dictionary:
+				continue
+			var button := Button.new()
+			var accept := bool(action.get("accept", false))
+			button.text = String(action.get("label", OFFER_YES if accept else OFFER_NO))
+			var tone := String(action.get("tone", "ghost"))
+			BbPetTheme.apply_button(button, "main" if tone == "primary" else "ghost")
+			var game_id := String(offer.get("gameId", ""))
+			button.pressed.connect(_respond_offer.bind(game_id, accept))
+			row.add_child(button)
+	_offer_root.size = Vector2(OFFER_W, card.get_combined_minimum_size().y + 8.0)
+	if _gathering:
+		_offer_root.position = Vector2(6, 2)
+		_offer_root.z_index = 20
+
+
+func _respond_offer(game_id: String, accept: bool) -> void:
+	RoomClient.game_respond(game_id, accept)
+
+
+func _layout_solo_offer() -> void:
+	if not _offer_showing():
+		return
+	var extra := int(_offer_root.size.y)
+	_set_window_size(Vector2i(maxi(PET_SIZE.x, int(OFFER_W)), PET_SIZE.y + extra + 4))
+	_offer_root.position = Vector2.ZERO
+	pixel_pet.position = Vector2((get_window().size.x - 64) / 2.0, float(extra))
+	update_passthrough()
+
+
 func _on_context_menu_id_pressed(id: int) -> void:
 	match id:
+		MENU_HUB:
+			WindowHub.open_panel("hub")
+		MENU_SCHOOL:
+			WindowHub.go_to_school()
+		MENU_HOME:
+			WindowHub.go_home()
+		MENU_FRIENDS:
+			WindowHub.open_friends()
+		MENU_CHAT:
+			WindowHub.open_panel("chat")
+		MENU_WX_NOW:
+			WeatherClient.push_once("weather")
+		MENU_NEWS_NOW:
+			WeatherClient.push_once("news")
+		MENU_SETTINGS:
+			WindowHub.open_panel("settings")
+		MENU_DEMO_OFF:
+			play_demo("off")
 		MENU_IDLE:
-			_lock_pose("idle")
+			play_demo("idle")
 		MENU_TALK:
-			_lock_pose("talk")
+			play_demo("talk")
 		MENU_DRINK:
-			_lock_pose("drink")
+			play_demo("drink")
 		MENU_SLEEP:
-			_lock_pose("sleep")
+			play_demo("sleep")
 		MENU_PHONE:
-			_lock_pose("phone")
+			play_demo("phone")
 		MENU_WX_SUN:
-			WeatherClient.apply_weather(IdleLife.demo_weather("sun"), false)
+			play_demo("wx-sun")
 		MENU_WX_RAIN:
-			WeatherClient.apply_weather(IdleLife.demo_weather("rain"), false)
+			play_demo("wx-rain")
 		MENU_HIDE:
 			WindowHub.hide_pet()
 		MENU_QUIT:
 			WindowHub.quit_app()
+		_:
+			_on_pet_demo_id(id)
 
 
 func _launch_kick_flyer(emote: Dictionary) -> void:

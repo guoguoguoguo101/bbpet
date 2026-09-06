@@ -214,6 +214,18 @@ func send_dress(dress: Dictionary) -> void:
 	_send({"type": "dress", "dress": dress, "placeId": home_id()})
 
 
+func send_pose(pose: String, look_x: int = 0, look_y: int = 0) -> void:
+	if not connected or home_id().is_empty() or pose.is_empty() or pose == "blink":
+		return
+	_send({
+		"type": "pose",
+		"pose": pose,
+		"lookX": look_x,
+		"lookY": look_y,
+		"placeId": home_id(),
+	})
+
+
 func you_dict() -> Dictionary:
 	return _you.duplicate(true)
 

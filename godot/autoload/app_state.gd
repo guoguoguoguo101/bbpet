@@ -39,6 +39,10 @@ func load_from(path: String) -> void:
 			state.pet.colors = PET_TEMPLATES.colors_for(state.pet.species, pet.colors)
 		else:
 			state.pet.colors = PET_TEMPLATES.DEFAULT_COLORS[state.pet.species].duplicate(true)
+		if pet.has("photoDataUrl") and pet.photoDataUrl is String:
+			state.pet.photoDataUrl = pet.photoDataUrl
+	if saved.has("chatHistory") and saved.chatHistory is Array:
+		set_chat_history(saved.chatHistory)
 	if saved.has("settings") and saved.settings is Dictionary:
 		var settings: Dictionary = saved.settings
 		if settings.has("roomUrl") and settings.roomUrl is String:
@@ -65,6 +69,8 @@ func load_from(path: String) -> void:
 			state.settings.model = settings.model
 		if settings.has("fallbackModel") and settings.fallbackModel is String:
 			state.settings.fallbackModel = settings.fallbackModel
+		if settings.has("hostRoom") and settings.hostRoom is bool:
+			state.settings.hostRoom = settings.hostRoom
 
 
 func save_to(path: String) -> void:
@@ -75,7 +81,9 @@ func save_to(path: String) -> void:
 			"name": state.pet.name,
 			"species": state.pet.species,
 			"colors": state.pet.colors.duplicate(true),
+			"photoDataUrl": String(state.pet.get("photoDataUrl", "")),
 		},
+		"chatHistory": state.chatHistory.duplicate(true),
 		"settings": {
 			"roomUrl": state.settings.roomUrl,
 			"worldWidth": state.settings.worldWidth,
@@ -89,6 +97,7 @@ func save_to(path: String) -> void:
 			"apiKey": state.settings.apiKey,
 			"model": state.settings.model,
 			"fallbackModel": state.settings.fallbackModel,
+			"hostRoom": bool(state.settings.get("hostRoom", false)),
 		},
 	}
 	var file := FileAccess.open(path, FileAccess.WRITE)
@@ -108,7 +117,8 @@ func set_species(species: String) -> void:
 	if state.pet.species == species:
 		return
 	state.pet.species = species
-	state.pet.colors = PET_TEMPLATES.DEFAULT_COLORS[species].duplicate(true)
+	if String(state.pet.get("photoDataUrl", "")).is_empty():
+		state.pet.colors = PET_TEMPLATES.DEFAULT_COLORS[species].duplicate(true)
 
 
 func set_pet_name(text: String) -> bool:
@@ -142,6 +152,24 @@ func set_pet_colors(colors: Dictionary) -> void:
 	state.pet.colors = PET_TEMPLATES.colors_for(state.pet.species, colors)
 
 
+func set_photo_data_url(url: String) -> void:
+	state.pet.photoDataUrl = url
+
+
+func set_chat_history(history: Array) -> void:
+	var cleaned: Array = []
+	for item in history:
+		if not item is Dictionary:
+			continue
+		cleaned.append({
+			"role": String(item.get("role", "")),
+			"content": String(item.get("content", "")),
+		})
+	if cleaned.size() > 12:
+		cleaned = cleaned.slice(cleaned.size() - 12)
+	state.chatHistory = cleaned
+
+
 func set_llm(base_url: String, api_key: String, model: String, fallback_model: String) -> void:
 	var base := base_url.strip_edges()
 	if base.is_empty():
@@ -150,6 +178,10 @@ func set_llm(base_url: String, api_key: String, model: String, fallback_model: S
 	state.settings.apiKey = api_key.strip_edges()
 	state.settings.model = model.strip_edges()
 	state.settings.fallbackModel = fallback_model.strip_edges()
+
+
+func set_host_room(enabled: bool) -> void:
+	state.settings.hostRoom = enabled
 
 
 func mark_onboarded() -> void:
@@ -178,7 +210,9 @@ func _default_state() -> Dictionary:
 			"name": "豆豆",
 			"species": "blob",
 			"colors": PET_TEMPLATES.DEFAULT_COLORS["blob"].duplicate(true),
+			"photoDataUrl": "",
 		},
+		"chatHistory": [],
 		"settings": {
 			"roomUrl": SCHOOL_LOGIC.DEFAULT_ROOM_URL,
 			"worldWidth": 820,
@@ -192,6 +226,7 @@ func _default_state() -> Dictionary:
 			"apiKey": "",
 			"model": "minimax/minimax-m3:free",
 			"fallbackModel": "minimax/minimax-m2.7:free",
+			"hostRoom": false,
 		},
 	}
 

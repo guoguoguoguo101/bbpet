@@ -8,6 +8,8 @@ func run() -> int:
 	failed += _check("pet size 32", SchoolLogic.PET_SIZE == 32)
 	failed += _check("speed 110", SchoolLogic.MOVE_SPEED == 110)
 	failed += _check("url", SchoolLogic.DEFAULT_ROOM_URL == "ws://127.0.0.1:18765")
+	failed += _check("port from url", SchoolLogic.room_listen_port("ws://192.168.1.8:19001") == 19001)
+	failed += _check("port default", SchoolLogic.room_listen_port("ws://127.0.0.1") == 18765)
 	var campus: Dictionary = SchoolLogic.PLACES["school:campus"]
 	failed += _check("campus title", campus.title == "学校操场")
 	var spawn: Dictionary = SchoolLogic.default_spawn("school:campus")

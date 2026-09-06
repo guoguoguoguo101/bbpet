@@ -2,7 +2,7 @@ extends Window
 
 const PANEL_SIZES := {
 	"wizard": Vector2i(340, 560),
-	"hub": Vector2i(300, 580),
+	"hub": Vector2i(300, 620),
 	"settings": Vector2i(340, 860),
 	"friends": Vector2i(300, 560),
 	"chat": Vector2i(340, 520),
@@ -87,6 +87,7 @@ func _build_wizard() -> void:
 	photo.pressed.connect(_pick_photo)
 	BbPetTheme.apply_button(photo, "pill")
 	content.add_child(photo)
+	_add_photo_preview()
 	var error_label := _add_error_label()
 	var confirm := Button.new()
 	confirm.name = "Confirm"
@@ -98,6 +99,22 @@ func _build_wizard() -> void:
 
 func _build_hub() -> void:
 	title = "今天去哪"
+	var head := HBoxContainer.new()
+	head.name = "Head"
+	head.add_theme_constant_override("separation", 8)
+	content.add_child(head)
+	var heading := Label.new()
+	heading.text = "今天去哪"
+	heading.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	BbPetTheme.apply_heading(heading)
+	heading.add_theme_font_size_override("font_size", 16)
+	head.add_child(heading)
+	var fold := Button.new()
+	fold.name = "Close"
+	fold.text = "收起"
+	fold.pressed.connect(func(): _window_hub().close_panel())
+	BbPetTheme.apply_button(fold, "ghost")
+	head.add_child(fold)
 	var hero := HBoxContainer.new()
 	hero.name = "Hero"
 	hero.add_theme_constant_override("separation", 10)
@@ -139,7 +156,7 @@ func _build_hub() -> void:
 	settings.text = "设置"
 	settings.pressed.connect(_open_settings)
 	BbPetTheme.apply_button(settings, "ghost")
-	content.add_child(settings)
+	foot.add_child(settings)
 	var room := _room_client_or_null()
 	if room and not room.friends_changed.is_connected(_on_hub_friends):
 		room.friends_changed.connect(_on_hub_friends)
@@ -419,12 +436,21 @@ func _build_settings() -> void:
 	room_input.text = _state().settings.roomUrl
 	BbPetTheme.apply_input(room_input)
 	content.add_child(room_input)
+	var host_room := CheckBox.new()
+	host_room.name = "HostRoom"
+	host_room.text = "我来当校长（本机开房，同事填下面的内网地址）"
+	host_room.button_pressed = bool(_state().settings.get("hostRoom", false))
+	host_room.add_theme_color_override("font_color", BbPetTheme.INK)
+	host_room.add_theme_color_override("font_hover_color", BbPetTheme.INK)
+	host_room.add_theme_color_override("font_pressed_color", BbPetTheme.INK)
+	content.add_child(host_room)
 	var photo := Button.new()
 	photo.name = "Photo"
 	photo.text = "选一张照片取色"
 	photo.pressed.connect(_pick_photo)
 	BbPetTheme.apply_button(photo, "pill")
 	content.add_child(photo)
+	_add_photo_preview()
 	_add_heading("API Base URL")
 	var base_input := LineEdit.new()
 	base_input.name = "ApiBase"
@@ -465,6 +491,7 @@ func _build_settings() -> void:
 			city_input,
 			push_input,
 			room_input,
+			host_room,
 			base_input,
 			key_input,
 			model_input,
@@ -480,6 +507,39 @@ func _add_heading(text: String) -> void:
 	label.text = text
 	BbPetTheme.apply_heading(label)
 	content.add_child(label)
+
+
+func _add_photo_preview() -> void:
+	var preview := TextureRect.new()
+	preview.name = "PhotoPreview"
+	preview.custom_minimum_size = Vector2(72, 72)
+	preview.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	preview.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_COVERED
+	var url := String(_state().pet.get("photoDataUrl", ""))
+	var tex := _texture_from_data_url(url)
+	if tex:
+		preview.texture = tex
+		preview.visible = true
+	else:
+		preview.visible = false
+	content.add_child(preview)
+
+
+func _texture_from_data_url(url: String) -> ImageTexture:
+	var marker := "base64,"
+	var idx := url.find(marker)
+	if idx < 0:
+		return null
+	var raw := Marshalls.base64_to_raw(url.substr(idx + marker.length()))
+	var image := Image.new()
+	if image.load_png_from_buffer(raw) != OK:
+		return null
+	return ImageTexture.create_from_image(image)
+
+
+func _image_to_data_url(image: Image) -> String:
+	var bytes := image.save_png_to_buffer()
+	return "data:image/png;base64," + Marshalls.raw_to_base64(bytes)
 
 
 func _add_city_input() -> OptionButton:
@@ -565,11 +625,19 @@ func _on_photo_selected(path: String, dialog: FileDialog) -> void:
 	if image.load(path) != OK:
 		return
 	_app_state().set_pet_colors(PetColors.extract_palette(image, _state().pet.species))
+	_app_state().set_photo_data_url(_image_to_data_url(image))
+	_app_state().save_to(STATE_PATH)
 	_window_hub().refresh_pet()
+	var preview: TextureRect = content.get_node_or_null("PhotoPreview")
+	if preview:
+		preview.texture = _texture_from_data_url(String(_state().pet.get("photoDataUrl", "")))
+		preview.visible = preview.texture != null
 
 
 func _build_chat() -> void:
 	title = "和 %s 聊天" % _state().pet.name
+	var saved: Variant = _state().get("chatHistory", [])
+	_chat_history = saved.duplicate(true) if saved is Array else []
 	var log := VBoxContainer.new()
 	log.name = "Log"
 	log.size_flags_vertical = Control.SIZE_EXPAND_FILL
@@ -628,9 +696,11 @@ func _send_chat(text: String) -> void:
 	if String(settings.get("apiKey", "")).strip_edges().is_empty():
 		var placeholder: Dictionary = ChatClient.reply_without_key(_chat_history.size())
 		_chat_history.append({"role": "assistant", "content": placeholder.reply})
+		_persist_chat()
 		_refresh_chat_log()
 		return
 	_chat_busy = true
+	_persist_chat()
 	_refresh_chat_log()
 	_pending_messages = _chat_history.duplicate(true)
 	_pending_models = []
@@ -658,6 +728,7 @@ func _request_next_model() -> void:
 		_chat_busy = false
 		var fail: Dictionary = ChatClient.error_reply("empty")
 		_chat_history.append({"role": "assistant", "content": fail.reply})
+		_persist_chat()
 		_refresh_chat_log()
 		return
 	var model: String = _pending_models.pop_front()
@@ -687,6 +758,7 @@ func _on_chat_http(_result: int, code: int, _headers: PackedStringArray, body: P
 		if not text.is_empty():
 			_chat_busy = false
 			_chat_history.append({"role": "assistant", "content": text})
+			_persist_chat()
 			_refresh_chat_log()
 			return
 	if not _pending_models.is_empty():
@@ -695,6 +767,7 @@ func _on_chat_http(_result: int, code: int, _headers: PackedStringArray, body: P
 	_chat_busy = false
 	var fail: Dictionary = ChatClient.error_reply("HTTP %d: %s" % [code, raw])
 	_chat_history.append({"role": "assistant", "content": fail.reply})
+	_persist_chat()
 	_refresh_chat_log()
 
 
@@ -718,6 +791,7 @@ func _save_settings(
 	city_input: OptionButton,
 	push_input: LineEdit,
 	room_input: LineEdit,
+	host_room: CheckBox,
 	base_input: LineEdit,
 	key_input: LineEdit,
 	model_input: LineEdit,
@@ -737,14 +811,27 @@ func _save_settings(
 	_app_state().set_city(city_id)
 	_app_state().set_push_interval_min(int(push_input.text))
 	_app_state().set_llm(base_input.text, key_input.text, model_input.text, fallback_input.text)
+	_app_state().set_host_room(host_room.button_pressed)
 	_app_state().save_to(STATE_PATH)
 	get_node("/root/WeatherClient").refresh_after_settings()
 	_window_hub().refresh_pet()
+	_window_hub().sync_room_host()
+	var host_error := String(_window_hub().host_error)
+	if not host_error.is_empty():
+		error_label.text = host_error
+		return
 	var room_client := _room_client()
 	if room_client.connected:
 		_window_hub().discard_world()
 		room_client.disconnect_room()
 	_window_hub().close_panel()
+
+
+func _persist_chat() -> void:
+	if not is_inside_tree():
+		return
+	_app_state().set_chat_history(_chat_history)
+	_app_state().save_to(STATE_PATH)
 
 
 func _app_state() -> Node:
@@ -759,11 +846,14 @@ func _state() -> Dictionary:
 			"name": "",
 			"species": "blob",
 			"colors": PET_TEMPLATES.DEFAULT_COLORS["blob"].duplicate(true),
+			"photoDataUrl": "",
 		},
+		"chatHistory": [],
 		"settings": {
 			"roomUrl": "",
 			"cityId": WeatherCities.DEFAULT_CITY.id,
 			"pushIntervalMin": 30,
+			"hostRoom": false,
 		},
 	}
 

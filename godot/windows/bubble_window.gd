@@ -1,5 +1,7 @@
 extends Window
 
+signal dismissed
+
 const MIN_SIZE := Vector2i(220, 80)
 const WRAP_WIDTH := 240
 const HOLD_NO_URL := 8.0
@@ -35,6 +37,7 @@ func present(payload: Dictionary) -> void:
 func dismiss() -> void:
 	_hold.stop()
 	hide()
+	dismissed.emit()
 
 
 func _build() -> void:

@@ -12,6 +12,7 @@ func run() -> int:
 		return _check("social API", false)
 	failed += _check("go_home API", rc.has_method("go_home") and rc.has_method("send_emote") and rc.has_method("send_home_chat"))
 	failed += _check("dress API", rc.has_method("send_dress") and rc.has_signal("dress_updated"))
+	failed += _check("pose API", rc.has_method("send_pose"))
 	failed += _check(
 		"game API",
 		rc.has_method("invite_game")
@@ -85,6 +86,25 @@ func run() -> int:
 	failed += _check("no optimistic emote pose", rc.home_people.size() == pose_before.size())
 	rc.send_home_chat("  客厅  ")
 	failed += _check("home chat", rc.last_sent.type == "chat" and rc.last_sent.placeId == "home:x" and rc.last_sent.text == "客厅")
+	rc.send_pose("sleep", 1, 0)
+	failed += _check(
+		"pose payload",
+		rc.last_sent.type == "pose"
+		and rc.last_sent.pose == "sleep"
+		and rc.last_sent.lookX == 1
+		and rc.last_sent.lookY == 0
+		and rc.last_sent.placeId == "home:x"
+	)
+	rc.last_sent = {"type": "sentinel"}
+	rc.send_pose("blink")
+	failed += _check("blink pose not sent", rc.last_sent.type == "sentinel")
+	rc.disconnect_room()
+	rc.last_sent = {"type": "sentinel"}
+	rc.send_pose("sleep")
+	failed += _check("disconnected pose not sent", rc.last_sent.type == "sentinel")
+	rc.connected = true
+	rc.send_pose("sleep")
+	failed += _check("pose without home not sent", rc.last_sent.type == "sentinel")
 	rc.disconnect_room()
 	var saw := {"campus": false, "home": false, "snapshots": 0, "dress": 0, "friends": 0, "chats": 0}
 	rc.snapshot_ready.connect(func(_you, _people, place_id):
@@ -234,6 +254,7 @@ func run() -> int:
 	failed += _check("disconnect clears game", rc.game.is_empty())
 	var room_src := FileAccess.get_file_as_string("res://autoload/room_client.gd")
 	failed += _check("welcome uploads last dress", room_src.contains("last_dress"))
+	failed += _check("sends pose type", room_src.contains('"type": "pose"'))
 	rc.free()
 	return failed
 

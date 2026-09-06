@@ -9,6 +9,7 @@ const MOVE_SEND_MS := 100
 const POSE_TICK_MS := 100
 const SCHOOL_CROWD_CAP := 100
 const DEFAULT_ROOM_URL := "ws://127.0.0.1:18765"
+const DEFAULT_ROOM_PORT := 18765
 
 const CAMPUS = [
 	"#########################",
@@ -267,3 +268,17 @@ static func camera_for(scale: float, me_x: float, me_y: float, stage_w: float, s
 	else:
 		top = mini(0, maxi(roundi(stage_h - drawn_h), top))
 	return {"scale": scale, "left": left, "top": top}
+
+
+static func room_listen_port(url: String) -> int:
+	var trimmed := url.strip_edges()
+	var colon := trimmed.rfind(":")
+	if colon <= 4:
+		return DEFAULT_ROOM_PORT
+	var tail := trimmed.substr(colon + 1)
+	if not tail.is_valid_int():
+		return DEFAULT_ROOM_PORT
+	var port := int(tail)
+	if port <= 0 or port > 65535:
+		return DEFAULT_ROOM_PORT
+	return port

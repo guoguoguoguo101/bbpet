@@ -18,7 +18,27 @@ func run() -> int:
 	failed += _check("tray show item", source.contains('menu.add_item("显示", MENU_SHOW)'))
 	failed += _check("tray hide item", source.contains('menu.add_item("隐藏", MENU_HIDE)'))
 	failed += _check("tray quit item", source.contains('menu.add_item("退出", MENU_QUIT)'))
+	failed += _check("tray hub item", source.contains('menu.add_item("今天去哪", MENU_HUB)'))
+	failed += _check("tray weather now", source.contains("现在看看天气"))
+	failed += _check("tray news now", source.contains("现在看看新闻"))
+	failed += _check("push once weather", FileAccess.get_file_as_string("res://autoload/weather_client.gd").contains("func push_once"))
 	failed += _check("quit disconnects room", source.contains("RoomClient.disconnect_room()"))
+	failed += _check("toggle panel API", source.contains("func toggle_panel"))
+	failed += _check(
+		"demo fill does not toggle panel",
+		not _fn_contains(source, "_fill_demo_menu", "open_panel")
+		and not _fn_contains(source, "_fill_demo_menu", "panel_is_open")
+	)
+	failed += _check(
+		"toggle panel closes or opens",
+		_fn_contains(source, "toggle_panel", "panel_is_open")
+		and _fn_contains(source, "toggle_panel", "open_panel")
+	)
+	failed += _check("sync room host API", source.contains("func sync_room_host"))
+	failed += _check("stop room host API", source.contains("func stop_room_host"))
+	failed += _check("host uses npm run room", source.contains("npm run room"))
+	failed += _check("host skip headless", _sync_room_host_skips_headless(source))
+	failed += _check("quit stops host", _quit_stops_host(source))
 	failed += _check(
 		"close world hides without leaving",
 		_close_world_hides_without_leaving(source)
@@ -44,7 +64,11 @@ func run() -> int:
 		_open_friends_connects_before_opening(source)
 	)
 	failed += _check("school snapshot gate", source.contains("SchoolSocial.should_open_world"))
-	failed += _check("show bubble API", source.contains("func show_bubble"))
+	failed += _check(
+		"show bubble starts talking",
+		_fn_contains(source, "show_bubble", "set_talking_push")
+		or _fn_contains(source, "show_bubble", "talk")
+	)
 	failed += _check("hide bubble API", source.contains("func hide_bubble"))
 	failed += _check("connects bubble_requested", source.contains("WeatherClient.bubble_requested"))
 	failed += _check("bubble window script", source.contains("res://windows/bubble_window.gd"))
@@ -162,6 +186,35 @@ func _close_world_hides_without_leaving(source: String) -> bool:
 		and not body.contains("disconnect_room")
 		and not body.contains("queue_free")
 	)
+
+
+func _sync_room_host_skips_headless(source: String) -> bool:
+	var start := source.find("func sync_room_host")
+	if start < 0:
+		return false
+	var nxt := source.find("\nfunc ", start + 1)
+	var body := source.substr(start, nxt - start if nxt > start else source.length() - start)
+	var headless := body.find("headless")
+	var early := body.find("return")
+	return headless >= 0 and early >= 0 and headless < early
+
+
+func _quit_stops_host(source: String) -> bool:
+	var start := source.find("func quit_app")
+	if start < 0:
+		return false
+	var nxt := source.find("\nfunc ", start + 1)
+	var body := source.substr(start, nxt - start if nxt > start else source.length() - start)
+	return body.contains("stop_room_host")
+
+
+func _fn_contains(source: String, fn: String, needle: String) -> bool:
+	var start := source.find("func %s" % fn)
+	if start < 0:
+		return false
+	var nxt := source.find("\nfunc ", start + 1)
+	var body := source.substr(start, nxt - start if nxt > start else source.length() - start)
+	return body.contains(needle)
 
 
 func _check(label: String, ok: bool) -> int:

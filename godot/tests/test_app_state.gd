@@ -25,6 +25,7 @@ func run() -> int:
 	failed += _check("default llm base", s.state.settings.apiBaseUrl == "https://openrouter.ai/api/v1")
 	failed += _check("default model", s.state.settings.model == "minimax/minimax-m3:free")
 	failed += _check("default fallback", s.state.settings.fallbackModel == "minimax/minimax-m2.7:free")
+	failed += _check("default host room", s.state.settings.hostRoom == false)
 	var default_path := APP_STATE_SCRIPT.DEFAULT_STATE_PATH
 	var had_default := FileAccess.file_exists(default_path)
 	var previous_default := FileAccess.get_file_as_string(default_path) if had_default else ""
@@ -57,12 +58,20 @@ func run() -> int:
 	s.set_city("shanghai")
 	s.set_push_interval_min(10)
 	s.set_llm("https://openrouter.ai/api/v1", "secret-key", "minimax/minimax-m3:free", "minimax/minimax-m2.7:free")
+	s.set_host_room(true)
+	s.set_photo_data_url("data:image/png;base64,secret")
+	s.set_chat_history([
+		{"role": "user", "content": "hi"},
+		{"role": "assistant", "content": "hey"},
+	])
 	s.save_to(path)
 	var raw := FileAccess.get_file_as_string(path)
 	var saved: Variant = JSON.parse_string(raw)
 	failed += _check("settings apiKey", saved is Dictionary and saved.settings.apiKey == "secret-key")
+	failed += _check("saves host room", saved is Dictionary and saved.settings.hostRoom == true)
 	failed += _check("no pet apiKey", saved is Dictionary and not saved.pet.has("apiKey"))
-	failed += _check("no photo", not raw.contains("photoDataUrl"))
+	failed += _check("saves photo", saved is Dictionary and saved.pet.photoDataUrl == "data:image/png;base64,secret")
+	failed += _check("saves chat", saved is Dictionary and saved.chatHistory.size() == 2)
 	s.state = {}
 	s.load_from(path)
 	failed += _check("reload onboarded", s.state.onboarded == true)
@@ -78,6 +87,14 @@ func run() -> int:
 	)
 	failed += _check("reload push interval", s.state.settings.pushIntervalMin == 10)
 	failed += _check("reload apiKey", s.state.settings.apiKey == "secret-key")
+	failed += _check("reload host room", s.state.settings.hostRoom == true)
+	failed += _check("reload photo", s.state.pet.photoDataUrl == "data:image/png;base64,secret")
+	failed += _check("reload chat", s.state.chatHistory.size() == 2 and s.state.chatHistory[0].content == "hi")
+	var many: Array = []
+	for i in 20:
+		many.append({"role": "user", "content": str(i)})
+	s.set_chat_history(many)
+	failed += _check("chat cap", s.state.chatHistory.size() == 12 and s.state.chatHistory[0].content == "8")
 	s.set_push_interval_min(2)
 	failed += _check("clamp push interval", s.state.settings.pushIntervalMin == 5)
 	var hello: Dictionary = s.pet_for_hello()

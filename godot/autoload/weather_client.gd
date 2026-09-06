@@ -77,7 +77,7 @@ func apply_weather(info: Dictionary, upload: bool = true) -> void:
 
 
 func request_bubble(kind: String, text: String, url: String = "") -> void:
-	bubble_requested.emit({"kind": kind, "text": text, "url": url})
+	bubble_requested.emit({"kind": kind, "text": text, "url": url, "talk": true})
 
 
 func quiet_bubble() -> void:
@@ -86,6 +86,15 @@ func quiet_bubble() -> void:
 	if app != null:
 		pet_name = str(app.state.pet.name)
 	request_bubble("info", DressLogic.quiet_line(pet_name))
+
+
+func push_once(kind: String) -> void:
+	if DisplayServer.get_name() == "headless":
+		return
+	if kind == "news":
+		_fetch_news()
+	else:
+		_fetch_weather(true)
 
 
 func refresh_after_settings() -> void:
@@ -108,7 +117,7 @@ func refresh_after_settings() -> void:
 
 
 func _on_weather_timer() -> void:
-	_fetch_weather(false)
+	_fetch_weather(true)
 
 
 func _on_push_timer() -> void:
