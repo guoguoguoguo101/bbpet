@@ -11,6 +11,7 @@ const PixelPetScene = preload("res://pet/pixel_pet.tscn")
 const PET_TEMPLATES = preload("res://pet/templates.gd")
 const SchoolSocial = preload("res://school/school_social.gd")
 const HomeLogic = preload("res://home/home_logic.gd")
+const WeatherCities = preload("res://weather/cities.gd")
 
 @onready var content: VBoxContainer = $Margin/Content
 
@@ -65,11 +66,12 @@ func _build_wizard() -> void:
 	name_input.placeholder_text = "名字"
 	name_input.text = _state().pet.name
 	content.add_child(name_input)
+	var city_input := _add_city_input()
 	var error_label := _add_error_label()
 	var confirm := Button.new()
 	confirm.name = "Confirm"
 	confirm.text = "确定"
-	confirm.pressed.connect(_confirm_wizard.bind(name_input, error_label))
+	confirm.pressed.connect(_confirm_wizard.bind(name_input, city_input, error_label))
 	content.add_child(confirm)
 
 
@@ -222,6 +224,13 @@ func _build_settings() -> void:
 		if species == _state().pet.species:
 			species_input.select(index)
 	content.add_child(species_input)
+	_add_heading("城市")
+	var city_input := _add_city_input()
+	_add_heading("冒泡间隔（分钟）")
+	var push_input := LineEdit.new()
+	push_input.name = "PushMin"
+	push_input.text = str(_state().settings.pushIntervalMin)
+	content.add_child(push_input)
 	_add_heading("学校地址")
 	var room_input := LineEdit.new()
 	room_input.name = "RoomUrl"
@@ -234,7 +243,9 @@ func _build_settings() -> void:
 	var save := Button.new()
 	save.name = "Save"
 	save.text = "保存"
-	save.pressed.connect(_save_settings.bind(name_input, species_input, room_input, error_label))
+	save.pressed.connect(
+		_save_settings.bind(name_input, species_input, city_input, push_input, room_input, error_label)
+	)
 	content.add_child(save)
 
 
@@ -242,6 +253,19 @@ func _add_heading(text: String) -> void:
 	var label := Label.new()
 	label.text = text
 	content.add_child(label)
+
+
+func _add_city_input() -> OptionButton:
+	var city_input := OptionButton.new()
+	city_input.name = "City"
+	for city: Dictionary in WeatherCities.CITIES:
+		var index := city_input.item_count
+		city_input.add_item(city.name)
+		city_input.set_item_metadata(index, city.id)
+		if city.id == _state().settings.cityId:
+			city_input.select(index)
+	content.add_child(city_input)
+	return city_input
 
 
 func _add_error_label() -> Label:
@@ -273,11 +297,13 @@ func _open_settings() -> void:
 	_window_hub().open_panel("settings")
 
 
-func _confirm_wizard(name_input: LineEdit, error_label: Label) -> void:
+func _confirm_wizard(name_input: LineEdit, city_input: OptionButton, error_label: Label) -> void:
 	_app_state().set_species(_selected_species)
 	if not _app_state().set_pet_name(name_input.text):
 		error_label.text = "请给宠物起个名字"
 		return
+	var city_id: String = city_input.get_item_metadata(city_input.selected)
+	_app_state().set_city(city_id)
 	_app_state().mark_onboarded()
 	_app_state().save_to(STATE_PATH)
 	_window_hub().refresh_pet()
@@ -287,6 +313,8 @@ func _confirm_wizard(name_input: LineEdit, error_label: Label) -> void:
 func _save_settings(
 	name_input: LineEdit,
 	species_input: OptionButton,
+	city_input: OptionButton,
+	push_input: LineEdit,
 	room_input: LineEdit,
 	error_label: Label
 ) -> void:
@@ -299,6 +327,9 @@ func _save_settings(
 	if not room_error.is_empty():
 		error_label.text = room_error
 		return
+	var city_id: String = city_input.get_item_metadata(city_input.selected)
+	_app_state().set_city(city_id)
+	_app_state().set_push_interval_min(int(push_input.text))
 	_app_state().save_to(STATE_PATH)
 	_window_hub().refresh_pet()
 	var room_client := _room_client()
@@ -321,7 +352,11 @@ func _state() -> Dictionary:
 			"species": "blob",
 			"colors": PET_TEMPLATES.DEFAULT_COLORS["blob"].duplicate(true),
 		},
-		"settings": {"roomUrl": ""},
+		"settings": {
+			"roomUrl": "",
+			"cityId": WeatherCities.DEFAULT_CITY.id,
+			"pushIntervalMin": 30,
+		},
 	}
 
 
