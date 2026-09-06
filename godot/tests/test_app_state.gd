@@ -22,6 +22,9 @@ func run() -> int:
 		and is_equal_approx(float(s.state.settings.longitude), 116.4074)
 	)
 	failed += _check("default push interval", s.state.settings.pushIntervalMin == 30)
+	failed += _check("default llm base", s.state.settings.apiBaseUrl == "https://openrouter.ai/api/v1")
+	failed += _check("default model", s.state.settings.model == "minimax/minimax-m3:free")
+	failed += _check("default fallback", s.state.settings.fallbackModel == "minimax/minimax-m2.7:free")
 	var default_path := APP_STATE_SCRIPT.DEFAULT_STATE_PATH
 	var had_default := FileAccess.file_exists(default_path)
 	var previous_default := FileAccess.get_file_as_string(default_path) if had_default else ""
@@ -53,9 +56,12 @@ func run() -> int:
 	s.state.pet.colors = {"body": "#000000"}
 	s.set_city("shanghai")
 	s.set_push_interval_min(10)
+	s.set_llm("https://openrouter.ai/api/v1", "secret-key", "minimax/minimax-m3:free", "minimax/minimax-m2.7:free")
 	s.save_to(path)
 	var raw := FileAccess.get_file_as_string(path)
-	failed += _check("no apiKey", not raw.contains("apiKey"))
+	var saved: Variant = JSON.parse_string(raw)
+	failed += _check("settings apiKey", saved is Dictionary and saved.settings.apiKey == "secret-key")
+	failed += _check("no pet apiKey", saved is Dictionary and not saved.pet.has("apiKey"))
 	failed += _check("no photo", not raw.contains("photoDataUrl"))
 	s.state = {}
 	s.load_from(path)
@@ -71,6 +77,7 @@ func run() -> int:
 		and is_equal_approx(float(s.state.settings.longitude), 121.4737)
 	)
 	failed += _check("reload push interval", s.state.settings.pushIntervalMin == 10)
+	failed += _check("reload apiKey", s.state.settings.apiKey == "secret-key")
 	s.set_push_interval_min(2)
 	failed += _check("clamp push interval", s.state.settings.pushIntervalMin == 5)
 	var hello: Dictionary = s.pet_for_hello()

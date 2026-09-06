@@ -7,6 +7,8 @@ const BOARD_LEFT := 32.0
 const BOARD_TOP := 6.0
 const BOARD_HEIGHT := 78.0
 const BOARD_SIDE_PAD := 32.0
+const NEARBY_RANGE := 140.0
+const NEARBY_BUBBLE_MS := 5000
 
 
 static func sanitize_chat(text: String) -> String:
@@ -53,6 +55,24 @@ static func should_open_world(place_id: String) -> bool:
 
 static func is_classroom_place(place: Dictionary) -> bool:
 	return String(place.get("kind", "")) == "classroom"
+
+
+static func is_campus_place(place: Dictionary) -> bool:
+	return String(place.get("kind", "")) == "campus"
+
+
+static func can_chat_here(place: Dictionary) -> bool:
+	return is_classroom_place(place) or is_campus_place(place)
+
+
+static func chat_kind_for(place: Dictionary) -> String:
+	return "board" if is_classroom_place(place) else "nearby"
+
+
+static func nearby_visible(ax: float, ay: float, bx: float, by: float) -> bool:
+	var dx := ax - bx
+	var dy := ay - by
+	return dx * dx + dy * dy <= NEARBY_RANGE * NEARBY_RANGE
 
 
 static func friend_ids(friends: Array) -> Array:

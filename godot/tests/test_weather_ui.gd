@@ -18,12 +18,8 @@ func run() -> int:
 		pet_src.contains("DisplayServer.window_set_mouse_passthrough")
 	)
 	failed += _check("passthrough still hull", pet_src.contains("_image_points"))
-	failed += _check(
-		"no FLYER",
-		not pet_src.contains("FLYER")
-		and not pet_src.contains("playFlyer")
-		and not dress_src.contains("FLYER")
-	)
+	failed += _check("dress no FLYER", not dress_src.contains("FLYER") and not dress_src.contains("playFlyer"))
+	failed += _check("play flyer", pet_src.contains("WindowHub.play_flyer"))
 	failed += _check("kick kept", pet_src.contains('["kick", "飞踢"]'))
 	failed += _check("menu always on top", pet_src.contains("context_menu.always_on_top = true"))
 	failed += _check(

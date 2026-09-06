@@ -10,11 +10,13 @@ signal friends_changed(friends: Array)
 signal home_updated
 signal emote_received(emote: Dictionary)
 signal dress_updated
+signal game_updated(game: Dictionary)
 
 const RoomMessages = preload("res://net/room_messages.gd")
 const SchoolSocial = preload("res://school/school_social.gd")
 const SchoolLogic = preload("res://school/school_logic.gd")
 const HomeLogic = preload("res://home/home_logic.gd")
+const GameView = preload("res://game/game_view.gd")
 const SCHOOL_CAMPUS := "school:campus"
 
 var connected := false
@@ -33,6 +35,7 @@ var last_emote: Dictionary = {}
 var home_poses: Dictionary = {}
 var dresses: Dictionary = {}
 var connecting := false
+var game: Dictionary = {}
 var _url := ""
 
 var _peer: WebSocketPeer
@@ -115,6 +118,8 @@ func disconnect_room() -> void:
 	_has_last_move = false
 	_has_uploaded_dress = false
 	_last_uploaded_dress.clear()
+	game.clear()
+	game_updated.emit({})
 	home_updated.emit()
 
 
@@ -127,7 +132,7 @@ func send_chat(text: String) -> void:
 	if cleaned.is_empty() or not connected:
 		return
 	var place: Dictionary = SchoolLogic.PLACES.get(place_id, {})
-	if not SchoolSocial.is_classroom_place(place):
+	if not SchoolSocial.can_chat_here(place):
 		return
 	_send({"type": "chat", "text": cleaned, "placeId": place_id})
 
@@ -136,6 +141,42 @@ func request_friend(target_id: String) -> void:
 	if not connected or target_id.is_empty():
 		return
 	_send({"type": "friendRequest", "targetId": target_id})
+
+
+func accept_friend(target_id: String) -> void:
+	if not connected or target_id.is_empty():
+		return
+	_send({"type": "friendAccept", "targetId": target_id})
+
+
+func decline_friend(target_id: String) -> void:
+	if not connected or target_id.is_empty():
+		return
+	_send({"type": "friendDecline", "targetId": target_id})
+
+
+func invite_game(target_id: String) -> void:
+	if not connected or target_id.is_empty():
+		return
+	_send({"type": "inviteGame", "targetId": target_id})
+
+
+func game_respond(game_id: String, accept: bool) -> void:
+	if not connected or game_id.is_empty():
+		return
+	_send({"type": "gameRespond", "gameId": game_id, "accept": accept})
+
+
+func game_move(game_id: String, x: int, y: int) -> void:
+	if not connected or game_id.is_empty():
+		return
+	_send({"type": "gameMove", "gameId": game_id, "x": x, "y": y})
+
+
+func game_resign(game_id: String) -> void:
+	if not connected or game_id.is_empty():
+		return
+	_send({"type": "gameResign", "gameId": game_id})
 
 
 func leave_school() -> void:
@@ -219,6 +260,7 @@ func _handle_server_text(text: String) -> void:
 			_you = msg.get("you", {}).duplicate(true)
 			_apply_friends(msg.get("home", {}))
 			_apply_home_bucket(msg.get("home", {}))
+			_apply_game(msg.get("game", null))
 			home_updated.emit()
 			_upload_local_dress()
 			if not pending_enter.is_empty():
@@ -279,6 +321,8 @@ func _handle_server_text(text: String) -> void:
 			_apply_home_pose(msg)
 		"dress":
 			_apply_dress(msg)
+		"gameState":
+			_apply_game(msg.get("game", null))
 		"error", "notice":
 			var raw := String(msg.get("message", msg.get("text", "")))
 			status_text = raw.replace("\r", " ").replace("\n", " ").substr(0, 80)
@@ -363,9 +407,10 @@ func _apply_chat(line: Dictionary) -> void:
 	if String(line.get("placeId", "")) != place_id:
 		return
 	var place: Dictionary = SchoolLogic.PLACES.get(place_id, {})
-	if not SchoolSocial.is_classroom_place(place):
+	if not SchoolSocial.can_chat_here(place):
 		return
-	board = SchoolSocial.append_board(board, line)
+	if SchoolSocial.is_classroom_place(place):
+		board = SchoolSocial.append_board(board, line)
 	chat_received.emit(line.duplicate(true))
 
 
@@ -519,6 +564,11 @@ func _apply_dress(msg: Dictionary) -> void:
 			school_person.dress = next_dress.duplicate(true)
 			_people[index] = school_person
 	dress_updated.emit()
+
+
+func _apply_game(raw: Variant) -> void:
+	game = GameView.normalize(raw)
+	game_updated.emit(game.duplicate(true))
 
 
 func _app_state() -> Node:

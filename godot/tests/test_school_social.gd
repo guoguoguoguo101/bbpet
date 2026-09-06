@@ -39,6 +39,13 @@ func run() -> int:
 	failed += _check("skip away", SchoolSocial.should_open_world("away") == false)
 	failed += _check("classroom", SchoolSocial.is_classroom_place({"kind": "classroom"}) == true)
 	failed += _check("campus not classroom", SchoolSocial.is_classroom_place({"kind": "campus"}) == false)
+	failed += _check("campus place", SchoolSocial.is_campus_place({"kind": "campus"}))
+	failed += _check("chat campus", SchoolSocial.can_chat_here({"kind": "campus"}))
+	failed += _check("kind board", SchoolSocial.chat_kind_for({"kind": "classroom"}) == "board")
+	failed += _check("kind nearby", SchoolSocial.chat_kind_for({"kind": "campus"}) == "nearby")
+	failed += _check("nearby in range", SchoolSocial.nearby_visible(0, 0, 100, 0))
+	failed += _check("nearby out", not SchoolSocial.nearby_visible(0, 0, 200, 0))
+	failed += _check("nearby range", is_equal_approx(SchoolSocial.NEARBY_RANGE, 140.0))
 	return failed
 
 

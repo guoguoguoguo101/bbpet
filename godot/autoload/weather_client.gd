@@ -60,7 +60,7 @@ func parse_weather_payload(city_name: String, data: Dictionary) -> Dictionary:
 	}
 
 
-func apply_weather(info: Dictionary) -> void:
+func apply_weather(info: Dictionary, upload: bool = true) -> void:
 	last_weather = info.duplicate(true)
 	var gear: Variant = info.get("gear", [])
 	var fx: Variant = info.get("fx", [])
@@ -69,6 +69,8 @@ func apply_weather(info: Dictionary) -> void:
 		"fx": fx.duplicate() if fx is Array else [],
 	}
 	weather_changed.emit(last_weather)
+	if not upload:
+		return
 	var room := _named_autoload("RoomClient")
 	if room != null and room.connected:
 		room.send_dress(last_dress)

@@ -25,7 +25,15 @@ func run() -> int:
 	)
 	failed += _check("discard world on quit", source.contains("func discard_world"))
 	failed += _check("friends panel kind", source.contains('"friends"'))
+	failed += _check("chat panel kind", source.contains('"chat"'))
 	failed += _check("open friends API", source.contains("func open_friends"))
+	failed += _check("play flyer API", source.contains("func play_flyer"))
+	failed += _check("flyer window script", source.contains("res://windows/flyer_window.gd"))
+	failed += _check("show game API", source.contains("func show_game"))
+	failed += _check("close game API", source.contains("func close_game"))
+	failed += _check("gomoku window script", source.contains("res://windows/gomoku_window.gd"))
+	failed += _check("playing opens game", source.contains("status == \"playing\""))
+	failed += _check("close resigns playing", source.contains("game_resign"))
 	failed += _check("go home API", source.contains("func go_home"))
 	failed += _check(
 		"go home connects before pending",
@@ -72,6 +80,23 @@ func run() -> int:
 	failed += _check("bubble autowrap", bubble_source.contains("autowrap"))
 	failed += _check("bubble label", bubble_source.contains("Label"))
 	bubble.free()
+
+	var game_script: Variant = load("res://windows/gomoku_window.gd")
+	if game_script == null or not game_script is Script or not game_script.can_instantiate():
+		push_error("window_hub: missing gomoku window")
+		return failed + 1
+	var game_win: Window = game_script.new()
+	failed += _check("game is Window", game_win is Window)
+	failed += _check("game not always on top", game_win.always_on_top == false)
+	failed += _check("game opaque", game_win.transparent == false)
+	failed += _check("game unresizable", game_win.unresizable)
+	failed += _check("game title", game_win.title == "BbPet 五子棋")
+	failed += _check("game size", game_win.size.x >= 520 and game_win.size.y >= 600)
+	failed += _check("game starts hidden", game_win.visible == false)
+	var game_src := FileAccess.get_file_as_string("res://windows/gomoku_window.gd")
+	failed += _check("game resign copy", game_src.contains("认输"))
+	failed += _check("game close hint", game_src.contains("关闭窗口 = 认输"))
+	game_win.free()
 	return failed
 
 

@@ -83,6 +83,13 @@ func run() -> int:
 		"anchor clamp min",
 		HomeLogic.anchor_window(Vector2i(10, 20), Vector2i(64, 86), Vector2i(400, 300), inset) == Vector2i(14, 24)
 	)
+	failed += _check("flyer dir index", HomeLogic.flyer_dir("x", 0, 2) == 1 and HomeLogic.flyer_dir("x", 2, 0) == -1)
+	var start := HomeLogic.flyer_point(0.0, Vector2(100, 200), Vector2(300, 180))
+	failed += _check("flyer start", start == Vector2(100, 200))
+	var mid := HomeLogic.flyer_point(0.3, Vector2(100, 200), Vector2(300, 180))
+	failed += _check("flyer mid lifted", mid.y < 200.0)
+	var seat := HomeLogic.flyer_seat(100, 200, 24, 40)
+	failed += _check("flyer seat", is_equal_approx(seat.x, 100 + 24 + (72 - 96) / 2.0))
 	return failed
 
 

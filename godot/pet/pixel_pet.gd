@@ -8,6 +8,8 @@ const PetTemplates = preload("res://pet/templates.gd")
 @export var pose := "idle"
 @export var pixel_size := 4
 @export var flip := false
+@export var look_x := 0
+@export var look_y := 0
 
 var _image: Image
 

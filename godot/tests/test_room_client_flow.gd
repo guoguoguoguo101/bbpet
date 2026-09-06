@@ -12,6 +12,14 @@ func run() -> int:
 		return _check("social API", false)
 	failed += _check("go_home API", rc.has_method("go_home") and rc.has_method("send_emote") and rc.has_method("send_home_chat"))
 	failed += _check("dress API", rc.has_method("send_dress") and rc.has_signal("dress_updated"))
+	failed += _check(
+		"game API",
+		rc.has_method("invite_game")
+		and rc.has_method("game_respond")
+		and rc.has_method("game_move")
+		and rc.has_method("game_resign")
+		and rc.has_signal("game_updated")
+	)
 	if failed:
 		rc.free()
 		return failed
@@ -164,13 +172,66 @@ func run() -> int:
 	rc.request_friend("y")
 	failed += _check("friend request", rc.last_sent.type == "friendRequest" and rc.last_sent.targetId == "y")
 	rc._handle_server_text('{"type":"friends","friends":[{"clientId":"y","name":"乙","online":true}],"incoming":[{"clientId":"z"}]}')
-	failed += _check("incoming stored unused", rc.incoming.size() == 1)
+	failed += _check("incoming stored", rc.incoming.size() == 1)
+	rc.accept_friend("z")
+	failed += _check("friend accept", rc.last_sent.type == "friendAccept" and rc.last_sent.targetId == "z")
+	rc.decline_friend("z")
+	failed += _check("friend decline", rc.last_sent.type == "friendDecline" and rc.last_sent.targetId == "z")
+	var incoming_before: int = rc.incoming.size()
+	failed += _check("accept does not local-clear incoming", rc.incoming.size() == incoming_before)
+	rc._handle_server_text(
+		'{"type":"snapshot","you":{"clientId":"x","x":384,"y":348},'
+		+ '"snapshot":{"placeId":"school:campus","people":[],"board":[]}}'
+	)
+	rc.send_chat("  操场说  ")
+	failed += _check(
+		"campus chat",
+		rc.last_sent.type == "chat" and rc.last_sent.text == "操场说" and rc.last_sent.placeId == "school:campus"
+	)
+	var chats_before: int = saw.chats
+	var board_before: int = rc.board.size()
+	rc._handle_server_text(
+		'{"type":"chat","line":{"id":"n3","clientId":"y","name":"乙","text":"嗨","kind":"nearby","placeId":"school:campus"}}'
+	)
+	failed += _check("nearby chat signal", saw.chats == chats_before + 1)
+	failed += _check("nearby not board", rc.board.size() == board_before)
+	var game_before: Dictionary = rc.game.duplicate(true)
+	rc.invite_game("y")
+	failed += _check("invite payload", rc.last_sent.type == "inviteGame" and rc.last_sent.targetId == "y")
+	failed += _check("invite not optimistic", rc.game == game_before)
+	rc._handle_server_text(
+		'{"type":"gameState","game":{"id":"g1","status":"pending","you":"black",'
+		+ '"black":{"clientId":"x","name":"豆豆"},"white":{"clientId":"y","name":"乙"},'
+		+ '"board":[],"turn":1,"deadlineAt":1}}'
+	)
+	failed += _check("pending stored", rc.game.status == "pending" and rc.game.id == "g1")
+	rc.game_respond("g1", true)
+	failed += _check("respond payload", rc.last_sent.type == "gameRespond" and rc.last_sent.gameId == "g1" and rc.last_sent.accept == true)
+	rc._handle_server_text(
+		'{"type":"gameState","game":{"id":"g1","status":"playing","you":"black",'
+		+ '"black":{"clientId":"x","name":"豆豆"},"white":{"clientId":"y","name":"乙"},'
+		+ '"board":[[0,0],[0,0]],"turn":1.0,"deadlineAt":9.0,"lastMove":null,"winLine":null,"result":null}}'
+	)
+	failed += _check("playing stored", rc.game.status == "playing" and int(rc.game.turn) == 1)
+	rc.game_move("g1", 7, 7)
+	failed += _check("move payload", rc.last_sent.type == "gameMove" and rc.last_sent.x == 7 and rc.last_sent.y == 7)
+	failed += _check("move not optimistic", rc.game.status == "playing" and rc.game.board[0][0] == 0)
+	rc.game_resign("g1")
+	failed += _check("resign payload", rc.last_sent.type == "gameResign" and rc.last_sent.gameId == "g1")
+	rc._handle_server_text(
+		'{"type":"gameState","game":{"id":"g1","status":"ended","you":"black","result":{"winnerId":"y","reason":"resign"},'
+		+ '"black":{"clientId":"x","name":"豆豆"},"white":{"clientId":"y","name":"乙"},"board":[],"turn":1,"deadlineAt":0}}'
+	)
+	failed += _check("ended stored", rc.game.status == "ended")
+	rc.invite_game("y")
+	failed += _check("ended can invite again", rc.last_sent.type == "inviteGame")
 	rc._handle_server_text('{"type":"notice","text":"已添加 乙"}')
 	failed += _check("last notice", rc.last_notice.contains("已添加"))
 	rc._handle_server_text('{"type":"error","message":"学校人满了"}')
 	failed += _check("error text", rc.status_text.contains("学校人满了"))
 	rc.disconnect_room()
 	failed += _check("disconnect clears dresses", rc.dresses.is_empty())
+	failed += _check("disconnect clears game", rc.game.is_empty())
 	var room_src := FileAccess.get_file_as_string("res://autoload/room_client.gd")
 	failed += _check("welcome uploads last dress", room_src.contains("last_dress"))
 	rc.free()

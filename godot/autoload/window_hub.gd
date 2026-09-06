@@ -5,6 +5,8 @@ signal panel_toggled
 const PANEL_SCENE = preload("res://windows/panel_window.tscn")
 const WORLD_SCENE = preload("res://windows/world_window.tscn")
 const BUBBLE_SCRIPT = preload("res://windows/bubble_window.gd")
+const FLYER_SCRIPT = preload("res://windows/flyer_window.gd")
+const GOMOKU_SCRIPT = preload("res://windows/gomoku_window.gd")
 const SchoolSocial = preload("res://school/school_social.gd")
 const HomeLogic = preload("res://home/home_logic.gd")
 const MENU_SHOW := 1
@@ -15,11 +17,16 @@ var _has_tray := false
 var _panel: Window
 var _world: Window
 var _bubble: Window
+var _flyer: Window
+var _flyer_target := ""
+var _game: Window
+var _last_game_status := ""
 
 
 func _ready() -> void:
 	_ensure_room_signals()
 	_ensure_bubble_signals()
+	_ensure_game_signals()
 	if DisplayServer.get_name() == "headless":
 		return
 	_setup_tray()
@@ -66,7 +73,7 @@ func toggle_panel() -> void:
 
 
 func open_panel(kind: String) -> void:
-	if not ["wizard", "hub", "settings", "friends"].has(kind):
+	if not ["wizard", "hub", "settings", "friends", "chat"].has(kind):
 		push_error("Unknown panel kind: %s" % kind)
 		return
 	close_panel()
@@ -145,6 +152,20 @@ func _ensure_room_signals() -> void:
 		RoomClient.snapshot_ready.connect(_on_room_snapshot)
 	if not RoomClient.others_updated.is_connected(_on_room_others_updated):
 		RoomClient.others_updated.connect(_on_room_others_updated)
+
+
+func _ensure_game_signals() -> void:
+	if not RoomClient.game_updated.is_connected(_on_game_updated):
+		RoomClient.game_updated.connect(_on_game_updated)
+
+
+func _on_game_updated(game: Dictionary) -> void:
+	var status := String(game.get("status", ""))
+	if status == "playing" and _last_game_status != "playing":
+		show_game()
+	_last_game_status = status
+	if is_instance_valid(_game) and _game.has_method("present"):
+		_game.call("present", game)
 
 
 func _on_room_connect_failed(reason: String) -> void:
@@ -253,6 +274,33 @@ func hide_bubble() -> void:
 	_bubble.dismiss()
 
 
+func play_flyer(payload: Dictionary) -> void:
+	if DisplayServer.get_name() == "headless":
+		return
+	if not is_instance_valid(_flyer):
+		_flyer = FLYER_SCRIPT.new()
+		add_child(_flyer)
+	_flyer_target = String(payload.get("id", ""))
+	_flyer.play(payload)
+
+
+func hide_flyer() -> void:
+	_flyer_target = ""
+	if is_instance_valid(_flyer):
+		_flyer.dismiss()
+
+
+func flyer_finished() -> void:
+	_flyer_target = ""
+	var scene := get_tree().current_scene
+	if scene != null and scene.has_method("on_flyer_finished"):
+		scene.call("on_flyer_finished")
+
+
+func flyer_target_id() -> String:
+	return _flyer_target
+
+
 func _position_bubble() -> void:
 	if not is_instance_valid(_bubble):
 		return
@@ -274,7 +322,33 @@ func hide_pet() -> void:
 		get_window().mode = Window.MODE_MINIMIZED
 
 
+func show_game() -> void:
+	_ensure_game_signals()
+	if DisplayServer.get_name() == "headless":
+		return
+	if not is_instance_valid(_game):
+		_game = GOMOKU_SCRIPT.new()
+		add_child(_game)
+		if not _game.close_requested.is_connected(close_game):
+			_game.close_requested.connect(close_game)
+	if _game.has_method("present"):
+		_game.call("present", RoomClient.game)
+	_game.show()
+	_game.grab_focus()
+
+
+func close_game() -> void:
+	if is_instance_valid(_game):
+		if String(RoomClient.game.get("status", "")) == "playing":
+			RoomClient.game_resign(String(RoomClient.game.get("id", "")))
+		_game.hide()
+		_game.queue_free()
+		_game = null
+
+
 func quit_app() -> void:
+	close_game()
+	hide_flyer()
 	discard_world()
 	RoomClient.disconnect_room()
 	get_tree().quit()

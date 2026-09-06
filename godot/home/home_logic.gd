@@ -14,6 +14,9 @@ const LOG_PAD := 6
 const LOG_LINE := 15
 const LOG_MAX_LINES := 3
 const EMOTE_COOLDOWN_MS := 5000
+const FLYER_SIZE := 96
+const FLYER_OUT := 220
+const FLYER_LIFT := 48
 
 const HOME_ACTIONS := {
 	"wave": {
@@ -168,6 +171,52 @@ static func gathering_title(you: Dictionary, guests: Array, my_id: String) -> St
 				return guest_name + "家"
 			break
 	return "好友家"
+
+
+static func flyer_dir(emote_id: String, from_index: int, to_index: int) -> int:
+	if from_index >= 0 and to_index >= 0 and from_index != to_index:
+		return 1 if to_index > from_index else -1
+	var hash_v := 0
+	for ch in emote_id:
+		hash_v = (hash_v + ch.unicode_at(0)) % 2
+	return 1 if hash_v == 0 else -1
+
+
+static func flyer_seat(pet_x: float, pet_y: float, slot_x: float, slot_y: float) -> Vector2:
+	return Vector2(pet_x + slot_x + (SLOT_W - FLYER_SIZE) / 2.0, pet_y + slot_y + 8.0)
+
+
+static func flyer_clamp_point(x: float, y: float, size: float, wa: Rect2) -> Vector2:
+	var max_x := maxf(wa.position.x, wa.position.x + wa.size.x - size)
+	var max_y := maxf(wa.position.y, wa.position.y + wa.size.y - size)
+	return Vector2(clampf(x, wa.position.x, max_x), clampf(y, wa.position.y, max_y))
+
+
+static func flyer_path(start_x: float, start_y: float, dir: int, wa: Rect2) -> Dictionary:
+	var start := flyer_clamp_point(start_x, start_y, FLYER_SIZE, wa)
+	var d := 1 if dir >= 0 else -1
+	var dest := flyer_clamp_point(start.x + d * FLYER_OUT, start.y - FLYER_LIFT, FLYER_SIZE, wa)
+	if absf(dest.x - start.x) < FLYER_SIZE:
+		d = -1 if d == 1 else 1
+		dest = flyer_clamp_point(start.x + d * FLYER_OUT, start.y - FLYER_LIFT, FLYER_SIZE, wa)
+	return {"start": start, "dest": dest, "dir": d}
+
+
+static func flyer_point(t: float, start: Vector2, dest: Vector2) -> Vector2:
+	var clamp_t := clampf(t, 0.0, 1.0)
+	if clamp_t < 0.1:
+		return start
+	if clamp_t < 0.5:
+		var u := _flyer_ease((clamp_t - 0.1) / 0.4)
+		return Vector2(start.x + (dest.x - start.x) * u, start.y + (dest.y - start.y) * u - 72.0 * sin(u * PI))
+	if clamp_t < 0.9:
+		var u2 := _flyer_ease((clamp_t - 0.5) / 0.4)
+		return Vector2(dest.x + (start.x - dest.x) * u2, dest.y + (start.y - dest.y) * u2 - 72.0 * sin((1.0 - u2) * PI))
+	return start
+
+
+static func _flyer_ease(u: float) -> float:
+	return 2.0 * u * u if u < 0.5 else 1.0 - pow(-2.0 * u + 2.0, 2.0) / 2.0
 
 
 static func _role_in_action(emote: Dictionary, client_id: String) -> String:

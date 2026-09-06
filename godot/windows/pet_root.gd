@@ -3,12 +3,21 @@ extends Control
 const PixelPetScene = preload("res://pet/pixel_pet.tscn")
 const HomeLogic = preload("res://home/home_logic.gd")
 const WeatherDress = preload("res://weather/weather_dress.gd")
+const IdleLife = preload("res://pet/idle_life.gd")
+const BbPetTheme = preload("res://ui/bbpet_theme.gd")
 
 const PET_SIZE := Vector2i(64, 86)
 const PET_OFFSET := Vector2(0, 11)
 const DRAG_THRESHOLD := 4.0
 const MENU_HIDE := 0
 const MENU_QUIT := 1
+const MENU_IDLE := 10
+const MENU_TALK := 11
+const MENU_DRINK := 12
+const MENU_SLEEP := 13
+const MENU_PHONE := 14
+const MENU_WX_SUN := 20
+const MENU_WX_RAIN := 21
 const SLOT_PIXEL := 4
 const SLOT_PET_LEFT := 4.0
 const SLOT_PET_TOP := 14.0
@@ -60,6 +69,11 @@ var _bar_close: Button
 var _emote_menu: Control
 var _emote_buttons: Array[Button] = []
 var _solo_dress: Control
+var _pose_lock_until := 0
+var _airborne_id := ""
+var _key_pid := -1
+var _typing_until := 0
+var _sense_skip := false
 
 
 func _ready() -> void:
@@ -79,9 +93,19 @@ func _ready() -> void:
 	pixel_pet.pixel_size = 4
 	_set_pose("idle")
 
+	context_menu.add_item("发呆", MENU_IDLE)
+	context_menu.add_item("说话", MENU_TALK)
+	context_menu.add_item("喝水", MENU_DRINK)
+	context_menu.add_item("睡觉", MENU_SLEEP)
+	context_menu.add_item("刷手机", MENU_PHONE)
+	context_menu.add_separator()
+	context_menu.add_item("晴天", MENU_WX_SUN)
+	context_menu.add_item("下雨", MENU_WX_RAIN)
+	context_menu.add_separator()
 	context_menu.add_item("隐藏", MENU_HIDE)
 	context_menu.add_item("退出", MENU_QUIT)
 	context_menu.always_on_top = true
+	BbPetTheme.apply_popup(context_menu)
 	context_menu.id_pressed.connect(_on_context_menu_id_pressed)
 
 	_build_gathering()
@@ -95,7 +119,11 @@ func _ready() -> void:
 	_refresh_dresses()
 
 	_blink_loop()
+	_drink_loop()
+	_nap_loop()
+	_slack_loop()
 	_gathering_loop()
+	_start_pet_sense()
 
 
 func _gui_input(event: InputEvent) -> void:
@@ -158,20 +186,81 @@ func _set_pose(next_pose: String) -> void:
 	update_passthrough()
 
 
+func _current_pose() -> String:
+	return String(pixel_pet.pose)
+
+
+func _autonomous() -> bool:
+	return not _gathering and Time.get_ticks_msec() >= _pose_lock_until
+
+
+func _lock_pose(pose: String, hold_ms: int = IdleLife.ACTION_HOLD_MS) -> void:
+	_pose_lock_until = Time.get_ticks_msec() + hold_ms
+	_set_pose(pose)
+
+
 func _blink_loop() -> void:
 	while is_inside_tree():
 		await get_tree().create_timer(randf_range(2.5, 4.5)).timeout
 		if not is_inside_tree():
 			return
-		if _gathering:
+		if _gathering or not _autonomous():
 			continue
 		_set_pose("blink")
 		await get_tree().create_timer(0.12).timeout
 		if not is_inside_tree():
 			return
-		if _gathering:
+		if _gathering or not _autonomous():
 			continue
-		_set_pose("idle")
+		if _current_pose() == "blink":
+			_set_pose("idle")
+
+
+func _drink_loop() -> void:
+	while is_inside_tree():
+		await get_tree().create_timer(randf_range(150.0, 300.0)).timeout
+		if not is_inside_tree():
+			return
+		if not _autonomous():
+			continue
+		if IdleLife.has_juice(WeatherClient.last_dress) or _current_pose() == "idle" or _current_pose() == "blink":
+			if _current_pose() == "idle" or _current_pose() == "blink":
+				_set_pose("drink")
+				await get_tree().create_timer(IdleLife.DRINK_MS / 1000.0).timeout
+				if _current_pose() == "drink" and _autonomous():
+					_set_pose("idle")
+
+
+func _nap_loop() -> void:
+	while is_inside_tree():
+		await get_tree().create_timer(randf_range(55.0, 75.0)).timeout
+		if not is_inside_tree():
+			return
+		if not _autonomous() or not IdleLife.can_nap(_current_pose()):
+			continue
+		_set_pose("sleep")
+		await get_tree().create_timer((IdleLife.NAP_SLEEP_MIN_MS + randi() % IdleLife.NAP_SLEEP_SPAN_MS) / 1000.0).timeout
+		if not is_inside_tree():
+			return
+		if _current_pose() != "sleep":
+			continue
+		_set_pose("wake")
+		await get_tree().create_timer(IdleLife.WAKE_MS / 1000.0).timeout
+		if _current_pose() == "wake" and _autonomous():
+			_set_pose("idle")
+
+
+func _slack_loop() -> void:
+	while is_inside_tree():
+		await get_tree().create_timer(randf_range(14.0, 30.0)).timeout
+		if not is_inside_tree():
+			return
+		if not _autonomous() or not IdleLife.can_slack(_current_pose()):
+			continue
+		_set_pose(IdleLife.pick_slack(randi()))
+		await get_tree().create_timer((IdleLife.SLACK_HOLD_MIN_MS + randi() % IdleLife.SLACK_HOLD_SPAN_MS) / 1000.0).timeout
+		if IdleLife.is_slack(_current_pose()) and _autonomous():
+			_set_pose("idle")
 
 
 func _gathering_loop() -> void:
@@ -245,6 +334,7 @@ func _build_bar() -> void:
 	_bar_input.max_length = 80
 	_bar_input.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_bar_input.add_theme_font_size_override("font_size", 12)
+	BbPetTheme.apply_input(_bar_input)
 	_bar_input.text_submitted.connect(_on_chat_submitted)
 	row.add_child(_bar_input)
 
@@ -258,6 +348,7 @@ func _build_bar() -> void:
 	_bar_chat.name = "ChatOpen"
 	_bar_chat.text = "聊"
 	_bar_chat.add_theme_font_size_override("font_size", 12)
+	BbPetTheme.apply_button(_bar_chat, "pill")
 	_bar_chat.pressed.connect(_on_chat_open)
 	row.add_child(_bar_chat)
 
@@ -265,6 +356,7 @@ func _build_bar() -> void:
 	_bar_close.name = "ChatClose"
 	_bar_close.text = "收"
 	_bar_close.add_theme_font_size_override("font_size", 12)
+	BbPetTheme.apply_button(_bar_close, "ghost")
 	_bar_close.pressed.connect(_on_chat_close)
 	row.add_child(_bar_close)
 
@@ -392,11 +484,12 @@ func _layout_key(views: Array, yard: Dictionary) -> String:
 	var parts := PackedStringArray()
 	for view in views:
 		parts.append("%s/%s/%s/%s" % [view.id, view.name, view.pose, view.caption])
-	parts.append("%d/%d/%s/%s/%s/%d" % [
+	parts.append("%d/%d/%s/%s/%s/%s/%d" % [
 		int(yard.width),
 		int(yard.height),
 		str(_chatting),
 		_menu_for,
+		_airborne_id,
 		str(_cooling()),
 		RoomClient.home_board.size(),
 	])
@@ -431,10 +524,12 @@ func _configure_slot(view: Dictionary, at: Vector2) -> void:
 	pet.colors = view.colors
 	pet.pose = String(view.pose)
 	pet.pixel_size = SLOT_PIXEL
+	pet.visible = String(view.id) != _airborne_id
 	pet.redraw()
 	var overlay: Control = slot.get_node_or_null("WeatherDress")
 	if overlay != null and overlay.has_method("apply"):
 		overlay.call("apply", _dress_for(String(view.id)))
+		overlay.visible = String(view.id) != _airborne_id
 	var plate: Label = slot.get_node("Plate")
 	plate.text = String(view.name)
 
@@ -546,6 +641,7 @@ func _build_emote_menu() -> void:
 		button.text = String(entry[1])
 		button.custom_minimum_size = Vector2(EMOTE_MENU_W, EMOTE_ROW_H)
 		button.add_theme_font_size_override("font_size", 11)
+		BbPetTheme.apply_button(button, "pill")
 		button.pressed.connect(_on_emote_pressed.bind(String(entry[0])))
 		column.add_child(button)
 		_emote_buttons.append(button)
@@ -640,6 +736,8 @@ func _on_home_updated() -> void:
 func _on_emote_received(_emote: Dictionary) -> void:
 	_emote_at_ms = Time.get_ticks_msec()
 	_invalidate()
+	if String(_emote.get("kind", "")) == "kick":
+		_launch_kick_flyer(_emote)
 
 
 func _on_room_lost() -> void:
@@ -819,7 +917,130 @@ func _cross(origin: Vector2, a: Vector2, b: Vector2) -> float:
 
 func _on_context_menu_id_pressed(id: int) -> void:
 	match id:
+		MENU_IDLE:
+			_lock_pose("idle")
+		MENU_TALK:
+			_lock_pose("talk")
+		MENU_DRINK:
+			_lock_pose("drink")
+		MENU_SLEEP:
+			_lock_pose("sleep")
+		MENU_PHONE:
+			_lock_pose("phone")
+		MENU_WX_SUN:
+			WeatherClient.apply_weather(IdleLife.demo_weather("sun"), false)
+		MENU_WX_RAIN:
+			WeatherClient.apply_weather(IdleLife.demo_weather("rain"), false)
 		MENU_HIDE:
 			WindowHub.hide_pet()
 		MENU_QUIT:
 			WindowHub.quit_app()
+
+
+func _launch_kick_flyer(emote: Dictionary) -> void:
+	var target_id := String(emote.get("targetId", ""))
+	if target_id.is_empty():
+		return
+	_airborne_id = target_id
+	_invalidate()
+	var guests: Array = []
+	var you := RoomClient.you_dict()
+	if not you.is_empty():
+		guests.append(you)
+	for person in RoomClient.home_people:
+		guests.append(person)
+	var from_index := -1
+	var to_index := -1
+	var target: Dictionary = {}
+	for index in guests.size():
+		var id := String(guests[index].get("clientId", ""))
+		if id == String(emote.get("fromId", "")):
+			from_index = index
+		if id == target_id:
+			to_index = index
+			target = guests[index]
+	var slot: Control = _slots.get(target_id)
+	var slot_pos := slot.position if slot != null else Vector2.ZERO
+	var win := get_window()
+	var seat := HomeLogic.flyer_seat(win.position.x, win.position.y, slot_pos.x, slot_pos.y)
+	var dir := HomeLogic.flyer_dir(String(emote.get("id", "")), from_index, to_index)
+	var path: Dictionary = HomeLogic.flyer_path(
+		seat.x, seat.y, dir, Rect2(DisplayServer.screen_get_usable_rect())
+	)
+	var species := String(target.get("species", "blob"))
+	var colors: Variant = target.get("colors", {})
+	if not colors is Dictionary:
+		colors = {}
+	WindowHub.play_flyer({
+		"id": target_id,
+		"species": species,
+		"colors": PetTemplates.colors_for(species, colors),
+		"pose": "peek",
+		"start": path.start,
+		"dest": path.dest,
+		"duration": HomeLogic.HOME_ACTIONS.kick.duration,
+	})
+
+
+func on_flyer_finished() -> void:
+	_airborne_id = ""
+	_invalidate()
+
+
+func _start_pet_sense() -> void:
+	if DisplayServer.get_name() == "headless":
+		_sense_skip = true
+		return
+	var timer := Timer.new()
+	timer.wait_time = 0.09
+	timer.timeout.connect(_tick_pet_sense)
+	add_child(timer)
+	timer.start()
+	if OS.get_name() != "Windows":
+		return
+	var godot_dir := ProjectSettings.globalize_path("res://").trim_suffix("/").trim_suffix("\\")
+	var script := godot_dir.get_base_dir().path_join("electron/watch-keys.ps1")
+	if not FileAccess.file_exists(script):
+		return
+	var out_path := ProjectSettings.globalize_path("user://bbpet-keys.txt")
+	var command := "& { & '%s' | ForEach-Object { Set-Content -LiteralPath '%s' -Value $_ } }" % [script.replace("'", "''"), out_path.replace("'", "''")]
+	_key_pid = OS.create_process(
+		"powershell.exe",
+		PackedStringArray(["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", command])
+	)
+
+
+func _tick_pet_sense() -> void:
+	if _sense_skip or _gathering:
+		return
+	var win := get_window()
+	if win == null or not win.visible:
+		return
+	var mouse := DisplayServer.mouse_get_position()
+	var center := win.position + Vector2i(win.size.x / 2, int(round(win.size.y * 0.32)))
+	var dx := mouse.x - center.x
+	var dy := mouse.y - center.y
+	var pose := _current_pose()
+	var pose_blocks_look := pose == "sleep" or pose == "peek"
+	var look_x := 0 if pose_blocks_look else (-1 if dx < -42 else (1 if dx > 42 else 0))
+	var look_y := 0 if pose_blocks_look else (-1 if dy < -28 else (1 if dy > 36 else 0))
+	pixel_pet.look_x = look_x
+	pixel_pet.look_y = look_y
+	pixel_pet.flip = look_x < 0
+	pixel_pet.flip_h = pixel_pet.flip
+	var key_path := "user://bbpet-keys.txt"
+	if FileAccess.file_exists(key_path):
+		var token := FileAccess.get_file_as_string(key_path).strip_edges()
+		if token.contains("T1"):
+			_typing_until = Time.get_ticks_msec() + 400
+	var typing := Time.get_ticks_msec() < _typing_until
+	if typing and _autonomous() and (_current_pose() == "idle" or _current_pose() == "blink"):
+		_set_pose("type")
+	elif not typing and _current_pose() == "type" and _autonomous():
+		_set_pose("idle")
+
+
+func _notification(what: int) -> void:
+	if what == NOTIFICATION_PREDELETE and _key_pid > 0:
+		OS.kill(_key_pid)
+		_key_pid = -1

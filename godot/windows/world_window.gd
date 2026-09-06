@@ -8,6 +8,8 @@ const SchoolLogic = preload("res://school/school_logic.gd")
 const SchoolSocial = preload("res://school/school_social.gd")
 const HomeLogic = preload("res://home/home_logic.gd")
 const WeatherDress = preload("res://weather/weather_dress.gd")
+const GameView = preload("res://game/game_view.gd")
+const BbPetTheme = preload("res://ui/bbpet_theme.gd")
 const CAMERA_SCALE := 1.8
 
 @onready var _status: Label = $VBox/Status
@@ -33,6 +35,9 @@ var _alert := ""
 var _inspect_id := ""
 var _inspect_menu: Control
 var _board_overlay: Control
+var _bubbles: Dictionary = {}
+var _invite_bar: HBoxContainer
+var _invite_tick: Timer
 
 
 func _ready() -> void:
@@ -52,6 +57,9 @@ func _ready() -> void:
 	_chat_hint.text = "黑板只有本班听得见"
 	_chat_input.placeholder_text = "点这里或按 Enter 写黑板"
 	_chat_send.text = "发送"
+	BbPetTheme.apply_input(_chat_input)
+	BbPetTheme.apply_hint(_chat_hint)
+	BbPetTheme.apply_button(_chat_send, "main")
 	_chat_send.pressed.connect(_submit_chat)
 	_chat_input.text_submitted.connect(func(_t): _submit_chat())
 	if not RoomClient.chat_received.is_connected(_on_chat_received):
@@ -62,6 +70,22 @@ func _ready() -> void:
 		RoomClient.dress_updated.connect(_on_dress_updated)
 	if not WeatherClient.weather_changed.is_connected(_on_weather_changed):
 		WeatherClient.weather_changed.connect(_on_weather_changed)
+	if not RoomClient.game_updated.is_connected(_on_game_updated_world):
+		RoomClient.game_updated.connect(_on_game_updated_world)
+	var invite_wrap := PanelContainer.new()
+	invite_wrap.name = "InviteBar"
+	BbPetTheme.apply_panel(invite_wrap)
+	_invite_bar = HBoxContainer.new()
+	_invite_bar.add_theme_constant_override("separation", 8)
+	invite_wrap.add_child(_invite_bar)
+	$VBox.add_child(invite_wrap)
+	$VBox.move_child(invite_wrap, 1)
+	_invite_tick = Timer.new()
+	_invite_tick.wait_time = 0.2
+	_invite_tick.timeout.connect(_refresh_invite)
+	add_child(_invite_tick)
+	_invite_tick.start()
+	_refresh_invite()
 
 
 func apply_snapshot(you: Dictionary, people: Array, place_id: String) -> void:
@@ -86,6 +110,7 @@ func apply_snapshot(you: Dictionary, people: Array, place_id: String) -> void:
 	_update_status()
 	_update_camera()
 	_refresh_board()
+	_refresh_chat_bar()
 
 
 func apply_others(people: Array) -> void:
@@ -129,6 +154,7 @@ func _apply_incoming_people(incoming: Array) -> void:
 func _physics_process(delta: float) -> void:
 	_interpolate_others()
 	_sync_pet_transforms()
+	_refresh_nearby_bubbles()
 	_update_camera()
 	if _place.is_empty() or _you.is_empty() or not has_focus() or _chat_focused():
 		return
@@ -278,7 +304,7 @@ func _configure_pet(id: String, data: Dictionary) -> void:
 		incoming_colors = {}
 	pet.species = species
 	pet.colors = PetTemplates.colors_for(species, incoming_colors)
-	pet.pose = "idle"
+	pet.pose = "talk" if _show_bubble_for(id, data) else "idle"
 	pet.pixel_size = 2
 	pet.flip = data.get("facing", "r") == "l"
 	pet.redraw()
@@ -374,13 +400,91 @@ func _submit_chat() -> void:
 	_chat_input.text = ""
 
 
-func _on_chat_received(_line: Dictionary) -> void:
+func _on_chat_received(line: Dictionary) -> void:
+	if SchoolSocial.chat_kind_for(_place) == "nearby" or String(line.get("kind", "")) == "nearby":
+		var id := String(line.get("clientId", ""))
+		if not id.is_empty():
+			_bubbles[id] = {
+				"text": String(line.get("text", "")),
+				"until": Time.get_ticks_msec() + int(SchoolSocial.NEARBY_BUBBLE_MS),
+			}
 	_refresh_board()
+	_refresh_nearby_bubbles()
 
 
 func _on_friends_changed_world(_friends: Array) -> void:
 	if not _inspect_id.is_empty():
 		_open_inspect(_inspect_id)
+	_refresh_invite()
+
+
+func _on_game_updated_world(_game: Dictionary) -> void:
+	if not _inspect_id.is_empty():
+		_open_inspect(_inspect_id)
+	_refresh_invite()
+
+
+func _refresh_chat_bar() -> void:
+	var school := SchoolLogic.is_school_place(_place_id)
+	_chat_bar.visible = school
+	if not school:
+		return
+	if _classroom_now():
+		_chat_hint.text = "黑板只有本班听得见"
+		_chat_input.placeholder_text = "点这里或按 Enter 写黑板"
+	else:
+		_chat_hint.text = "走近才看得到气泡"
+		_chat_input.placeholder_text = "点这里或按 Enter 说话"
+
+
+func _show_bubble_for(id: String, data: Dictionary) -> bool:
+	var client_id := String(_you.get("clientId", "")) if id == "self" else String(data.get("clientId", id))
+	var bubble: Dictionary = _bubbles.get(client_id, {})
+	if bubble.is_empty():
+		return false
+	if int(bubble.get("until", 0)) <= Time.get_ticks_msec():
+		_bubbles.erase(client_id)
+		return false
+	if id == "self" or _classroom_now():
+		return true
+	return SchoolSocial.nearby_visible(
+		float(_you.get("x", 0)),
+		float(_you.get("y", 0)),
+		float(data.get("x", 0)),
+		float(data.get("y", 0))
+	)
+
+
+func _refresh_nearby_bubbles() -> void:
+	var now := Time.get_ticks_msec()
+	for id in _bubbles.keys():
+		if int(_bubbles[id].until) <= now:
+			_bubbles.erase(id)
+	for id in _pet_nodes.keys():
+		var pet: Node = _pet_nodes[id]
+		var data: Dictionary = _you if id == "self" else {}
+		if id != "self":
+			for person in _others:
+				if String(person.get("clientId", "")) == id:
+					data = person
+					break
+		var show := _show_bubble_for(id, data)
+		pet.pose = "talk" if show else "idle"
+		pet.redraw()
+		var label: Label = pet.get_node_or_null("NearbyBubble")
+		if show:
+			if label == null:
+				label = Label.new()
+				label.name = "NearbyBubble"
+				label.position = Vector2(-10, -18)
+				label.add_theme_font_size_override("font_size", 10)
+				label.add_theme_color_override("font_color", Color("#24382c"))
+				pet.add_child(label)
+			var key: String = String(_you.get("clientId", "")) if id == "self" else id
+			label.text = String(_bubbles.get(key, {}).get("text", ""))
+			label.visible = true
+		elif label != null:
+			label.visible = false
 
 
 func _classroom_now() -> bool:
@@ -391,7 +495,7 @@ func _refresh_board() -> void:
 	if is_instance_valid(_board_overlay):
 		_board_overlay.queue_free()
 		_board_overlay = null
-	_chat_bar.visible = _classroom_now()
+	_refresh_chat_bar()
 	if not _classroom_now():
 		return
 	var overlay := Control.new()
@@ -443,10 +547,13 @@ func _open_inspect(client_id: String) -> void:
 		_inspect_menu.queue_free()
 	var menu := PanelContainer.new()
 	_inspect_menu = menu
+	BbPetTheme.apply_panel(menu)
 	var box := VBoxContainer.new()
+	box.add_theme_constant_override("separation", 6)
 	menu.add_child(box)
 	var name_label := Label.new()
 	name_label.text = String(person.get("name", ""))
+	BbPetTheme.apply_heading(name_label)
 	box.add_child(name_label)
 	var kind := SchoolSocial.friend_menu_kind(client_id, SchoolSocial.friend_ids(RoomClient.friends))
 	if kind == "already":
@@ -458,6 +565,7 @@ func _open_inspect(client_id: String) -> void:
 		var visit := Button.new()
 		if HomeLogic.is_friend_at_home(card):
 			visit.text = "去他家"
+			BbPetTheme.apply_button(visit, "pill")
 			visit.pressed.connect(func():
 				WindowHub.go_home(client_id)
 				_close_inspect()
@@ -465,10 +573,21 @@ func _open_inspect(client_id: String) -> void:
 		else:
 			visit.text = "不在家"
 			visit.disabled = true
+			BbPetTheme.apply_button(visit, "ghost")
+		if GameView.can_invite_friend(RoomClient.game, String(_you.get("clientId", "")), card):
+			var play := Button.new()
+			play.text = "五子棋"
+			BbPetTheme.apply_button(play, "pill")
+			play.pressed.connect(func():
+				RoomClient.invite_game(client_id)
+				_close_inspect()
+			)
+			box.add_child(play)
 		box.add_child(visit)
 	else:
 		var add := Button.new()
 		add.text = "加好友"
+		BbPetTheme.apply_button(add, "main")
 		add.pressed.connect(func():
 			RoomClient.request_friend(client_id)
 			_close_inspect()
@@ -476,6 +595,7 @@ func _open_inspect(client_id: String) -> void:
 		box.add_child(add)
 	var cancel := Button.new()
 	cancel.text = "取消"
+	BbPetTheme.apply_button(cancel, "ghost")
 	cancel.pressed.connect(_close_inspect)
 	box.add_child(cancel)
 	_stage.add_child(menu)
@@ -541,7 +661,48 @@ func _update_status() -> void:
 	elif _place.is_empty():
 		_status.text = "正在走进校门..."
 	else:
-		_status.text = "%s · %d人" % [_place.title, _others.size() + 1]
+		_status.text = "%s · %d人 · WASD 移动 · 点同学加好友 · %s" % [
+			_place.title,
+			_others.size() + 1,
+			"黑板只有本班听得见" if _classroom_now() else "走近才看得到气泡",
+		]
+	_refresh_invite()
+
+
+func _refresh_invite() -> void:
+	if _invite_bar == null:
+		return
+	var wrap: Control = _invite_bar.get_parent()
+	for child in _invite_bar.get_children():
+		child.free()
+	var game: Dictionary = RoomClient.game
+	if not GameView.is_incoming_invite(game):
+		_invite_bar.visible = false
+		if wrap:
+			wrap.visible = false
+		return
+	_invite_bar.visible = true
+	if wrap:
+		wrap.visible = true
+	var black: Dictionary = game.get("black", {}) if game.get("black") is Dictionary else {}
+	var now_ms := int(Time.get_unix_time_from_system() * 1000.0)
+	var seconds: int = GameView.seconds_left(int(game.get("deadlineAt", 0)), now_ms)
+	var label := Label.new()
+	label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	label.text = "%s 邀请你下五子棋 %d秒" % [String(black.get("name", "")), seconds]
+	BbPetTheme.apply_heading(label)
+	_invite_bar.add_child(label)
+	var accept := Button.new()
+	accept.text = "接受"
+	BbPetTheme.apply_button(accept, "main")
+	var game_id := String(game.get("id", ""))
+	accept.pressed.connect(func(): RoomClient.game_respond(game_id, true))
+	_invite_bar.add_child(accept)
+	var decline := Button.new()
+	decline.text = "拒绝"
+	BbPetTheme.apply_button(decline, "ghost")
+	decline.pressed.connect(func(): RoomClient.game_respond(game_id, false))
+	_invite_bar.add_child(decline)
 
 
 func _update_camera() -> void:

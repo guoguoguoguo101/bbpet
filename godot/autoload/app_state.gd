@@ -35,7 +35,10 @@ func load_from(path: String) -> void:
 			state.pet.name = sanitize_name(pet.name)
 		if pet.has("species") and PET_TEMPLATES.DEFAULT_COLORS.has(pet.species):
 			state.pet.species = pet.species
-		state.pet.colors = PET_TEMPLATES.DEFAULT_COLORS[state.pet.species].duplicate(true)
+		if pet.has("colors") and pet.colors is Dictionary and _complete_colors(pet.colors):
+			state.pet.colors = PET_TEMPLATES.colors_for(state.pet.species, pet.colors)
+		else:
+			state.pet.colors = PET_TEMPLATES.DEFAULT_COLORS[state.pet.species].duplicate(true)
 	if saved.has("settings") and saved.settings is Dictionary:
 		var settings: Dictionary = saved.settings
 		if settings.has("roomUrl") and settings.roomUrl is String:
@@ -54,6 +57,14 @@ func load_from(path: String) -> void:
 			state.settings.longitude = settings.longitude
 		if settings.has("pushIntervalMin") and (settings.pushIntervalMin is int or settings.pushIntervalMin is float):
 			state.settings.pushIntervalMin = DRESS_LOGIC.clamp_push_minutes(int(settings.pushIntervalMin))
+		if settings.has("apiBaseUrl") and settings.apiBaseUrl is String:
+			state.settings.apiBaseUrl = settings.apiBaseUrl
+		if settings.has("apiKey") and settings.apiKey is String:
+			state.settings.apiKey = settings.apiKey
+		if settings.has("model") and settings.model is String:
+			state.settings.model = settings.model
+		if settings.has("fallbackModel") and settings.fallbackModel is String:
+			state.settings.fallbackModel = settings.fallbackModel
 
 
 func save_to(path: String) -> void:
@@ -74,6 +85,10 @@ func save_to(path: String) -> void:
 			"latitude": state.settings.latitude,
 			"longitude": state.settings.longitude,
 			"pushIntervalMin": state.settings.pushIntervalMin,
+			"apiBaseUrl": state.settings.apiBaseUrl,
+			"apiKey": state.settings.apiKey,
+			"model": state.settings.model,
+			"fallbackModel": state.settings.fallbackModel,
 		},
 	}
 	var file := FileAccess.open(path, FileAccess.WRITE)
@@ -89,6 +104,8 @@ func sanitize_name(text: String) -> String:
 
 func set_species(species: String) -> void:
 	if not PET_TEMPLATES.DEFAULT_COLORS.has(species):
+		return
+	if state.pet.species == species:
 		return
 	state.pet.species = species
 	state.pet.colors = PET_TEMPLATES.DEFAULT_COLORS[species].duplicate(true)
@@ -119,6 +136,20 @@ func set_city(id: String) -> void:
 
 func set_push_interval_min(n: int) -> void:
 	state.settings.pushIntervalMin = DRESS_LOGIC.clamp_push_minutes(n)
+
+
+func set_pet_colors(colors: Dictionary) -> void:
+	state.pet.colors = PET_TEMPLATES.colors_for(state.pet.species, colors)
+
+
+func set_llm(base_url: String, api_key: String, model: String, fallback_model: String) -> void:
+	var base := base_url.strip_edges()
+	if base.is_empty():
+		base = "https://openrouter.ai/api/v1"
+	state.settings.apiBaseUrl = base
+	state.settings.apiKey = api_key.strip_edges()
+	state.settings.model = model.strip_edges()
+	state.settings.fallbackModel = fallback_model.strip_edges()
 
 
 func mark_onboarded() -> void:
@@ -157,8 +188,20 @@ func _default_state() -> Dictionary:
 			"latitude": WEATHER_CITIES.DEFAULT_CITY.latitude,
 			"longitude": WEATHER_CITIES.DEFAULT_CITY.longitude,
 			"pushIntervalMin": 30,
+			"apiBaseUrl": "https://openrouter.ai/api/v1",
+			"apiKey": "",
+			"model": "minimax/minimax-m3:free",
+			"fallbackModel": "minimax/minimax-m2.7:free",
 		},
 	}
+
+
+func _complete_colors(colors: Dictionary) -> bool:
+	var sample: Dictionary = PET_TEMPLATES.DEFAULT_COLORS["blob"]
+	for key in sample:
+		if not colors.has(key) or not colors[key] is String:
+			return false
+	return true
 
 
 func _generate_client_id() -> String:
