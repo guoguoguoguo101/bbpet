@@ -2,6 +2,8 @@ extends Node
 
 const PET_TEMPLATES = preload("res://pet/templates.gd")
 const SCHOOL_LOGIC = preload("res://school/school_logic.gd")
+const WEATHER_CITIES = preload("res://weather/cities.gd")
+const DRESS_LOGIC = preload("res://weather/dress_logic.gd")
 const DEFAULT_STATE_PATH := "user://bbpet-state.json"
 const ROOM_URL_ERROR := "学校地址要以 ws:// 或 wss:// 开头"
 
@@ -42,6 +44,16 @@ func load_from(path: String) -> void:
 			state.settings.worldWidth = settings.worldWidth
 		if settings.has("worldHeight") and (settings.worldHeight is int or settings.worldHeight is float):
 			state.settings.worldHeight = settings.worldHeight
+		if settings.has("cityId") and settings.cityId is String:
+			state.settings.cityId = settings.cityId
+		if settings.has("cityName") and settings.cityName is String:
+			state.settings.cityName = settings.cityName
+		if settings.has("latitude") and (settings.latitude is int or settings.latitude is float):
+			state.settings.latitude = settings.latitude
+		if settings.has("longitude") and (settings.longitude is int or settings.longitude is float):
+			state.settings.longitude = settings.longitude
+		if settings.has("pushIntervalMin") and (settings.pushIntervalMin is int or settings.pushIntervalMin is float):
+			state.settings.pushIntervalMin = DRESS_LOGIC.clamp_push_minutes(int(settings.pushIntervalMin))
 
 
 func save_to(path: String) -> void:
@@ -57,6 +69,11 @@ func save_to(path: String) -> void:
 			"roomUrl": state.settings.roomUrl,
 			"worldWidth": state.settings.worldWidth,
 			"worldHeight": state.settings.worldHeight,
+			"cityId": state.settings.cityId,
+			"cityName": state.settings.cityName,
+			"latitude": state.settings.latitude,
+			"longitude": state.settings.longitude,
+			"pushIntervalMin": state.settings.pushIntervalMin,
 		},
 	}
 	var file := FileAccess.open(path, FileAccess.WRITE)
@@ -92,6 +109,18 @@ func set_room_url(url: String) -> String:
 	return ""
 
 
+func set_city(id: String) -> void:
+	var city: Dictionary = WEATHER_CITIES.by_id(id)
+	state.settings.cityId = city.id
+	state.settings.cityName = city.name
+	state.settings.latitude = city.latitude
+	state.settings.longitude = city.longitude
+
+
+func set_push_interval_min(n: int) -> void:
+	state.settings.pushIntervalMin = DRESS_LOGIC.clamp_push_minutes(n)
+
+
 func mark_onboarded() -> void:
 	state.onboarded = true
 
@@ -123,6 +152,11 @@ func _default_state() -> Dictionary:
 			"roomUrl": SCHOOL_LOGIC.DEFAULT_ROOM_URL,
 			"worldWidth": 820,
 			"worldHeight": 560,
+			"cityId": WEATHER_CITIES.DEFAULT_CITY.id,
+			"cityName": WEATHER_CITIES.DEFAULT_CITY.name,
+			"latitude": WEATHER_CITIES.DEFAULT_CITY.latitude,
+			"longitude": WEATHER_CITIES.DEFAULT_CITY.longitude,
+			"pushIntervalMin": 30,
 		},
 	}
 

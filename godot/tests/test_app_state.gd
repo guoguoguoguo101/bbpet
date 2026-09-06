@@ -14,6 +14,14 @@ func run() -> int:
 	failed += _check("clientId", String(s.state.clientId).length() >= 8)
 	failed += _check("room", s.state.settings.roomUrl == SchoolLogic.DEFAULT_ROOM_URL)
 	failed += _check("default world size", s.state.settings.worldWidth == 820 and s.state.settings.worldHeight == 560)
+	failed += _check(
+		"default city",
+		s.state.settings.cityId == "beijing"
+		and s.state.settings.cityName == "北京"
+		and is_equal_approx(float(s.state.settings.latitude), 39.9042)
+		and is_equal_approx(float(s.state.settings.longitude), 116.4074)
+	)
+	failed += _check("default push interval", s.state.settings.pushIntervalMin == 30)
 	var default_path := APP_STATE_SCRIPT.DEFAULT_STATE_PATH
 	var had_default := FileAccess.file_exists(default_path)
 	var previous_default := FileAccess.get_file_as_string(default_path) if had_default else ""
@@ -43,6 +51,8 @@ func run() -> int:
 	s.state.apiKey = "secret"
 	s.state.pet.photoDataUrl = "data:image/png;base64,secret"
 	s.state.pet.colors = {"body": "#000000"}
+	s.set_city("shanghai")
+	s.set_push_interval_min(10)
 	s.save_to(path)
 	var raw := FileAccess.get_file_as_string(path)
 	failed += _check("no apiKey", not raw.contains("apiKey"))
@@ -53,6 +63,16 @@ func run() -> int:
 	failed += _check("reload cat", s.state.pet.species == "cat")
 	failed += _check("reload default colors", s.state.pet.colors == PetTemplates.DEFAULT_COLORS["cat"])
 	failed += _check("reload world size", s.state.settings.worldWidth == 1024 and s.state.settings.worldHeight == 768)
+	failed += _check(
+		"reload city",
+		s.state.settings.cityId == "shanghai"
+		and s.state.settings.cityName == "上海"
+		and is_equal_approx(float(s.state.settings.latitude), 31.2304)
+		and is_equal_approx(float(s.state.settings.longitude), 121.4737)
+	)
+	failed += _check("reload push interval", s.state.settings.pushIntervalMin == 10)
+	s.set_push_interval_min(2)
+	failed += _check("clamp push interval", s.state.settings.pushIntervalMin == 5)
 	var hello: Dictionary = s.pet_for_hello()
 	failed += _check("hello keys", hello.has("name") and hello.has("species") and hello.has("colors") and not hello.has("photoDataUrl"))
 	var bad := "user://test-bbpet-bad.json"
