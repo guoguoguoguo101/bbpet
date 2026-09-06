@@ -9,6 +9,7 @@ signal chat_received(line: Dictionary)
 signal friends_changed(friends: Array)
 signal home_updated
 signal emote_received(emote: Dictionary)
+signal dress_updated
 
 const RoomMessages = preload("res://net/room_messages.gd")
 const SchoolSocial = preload("res://school/school_social.gd")
@@ -30,6 +31,7 @@ var home_people: Array = []
 var home_board: Array = []
 var last_emote: Dictionary = {}
 var home_poses: Dictionary = {}
+var dresses: Dictionary = {}
 var connecting := false
 var _url := ""
 
@@ -41,6 +43,8 @@ var _people: Array = []
 var _has_last_move := false
 var _last_move := Vector2.ZERO
 var _last_facing := ""
+var _has_uploaded_dress := false
+var _last_uploaded_dress: Dictionary = {}
 
 
 func _process(_delta: float) -> void:
@@ -105,9 +109,12 @@ func disconnect_room() -> void:
 	home_board.clear()
 	last_emote.clear()
 	home_poses.clear()
+	dresses.clear()
 	_you.clear()
 	_url = ""
 	_has_last_move = false
+	_has_uploaded_dress = false
+	_last_uploaded_dress.clear()
 	home_updated.emit()
 
 
@@ -154,6 +161,16 @@ func send_emote(kind: String, target_id: String) -> void:
 	if not connected or kind.is_empty() or target_id.is_empty() or home_id().is_empty():
 		return
 	_send({"type": "emote", "kind": kind, "targetId": target_id, "placeId": home_id()})
+
+
+func send_dress(dress: Dictionary) -> void:
+	if not connected or home_id().is_empty():
+		return
+	if _has_uploaded_dress and dress == _last_uploaded_dress:
+		return
+	_has_uploaded_dress = true
+	_last_uploaded_dress = dress.duplicate(true)
+	_send({"type": "dress", "dress": dress, "placeId": home_id()})
 
 
 func you_dict() -> Dictionary:
@@ -259,6 +276,8 @@ func _handle_server_text(text: String) -> void:
 			home_updated.emit()
 		"pose":
 			_apply_home_pose(msg)
+		"dress":
+			_apply_dress(msg)
 		"error", "notice":
 			var raw := String(msg.get("message", msg.get("text", "")))
 			status_text = raw.replace("\r", " ").replace("\n", " ").substr(0, 80)
@@ -442,6 +461,26 @@ func _apply_home_pose(msg: Dictionary) -> void:
 			home_people[index] = person
 			break
 	home_updated.emit()
+
+
+func _apply_dress(msg: Dictionary) -> void:
+	var client_id := String(msg.get("clientId", ""))
+	var raw_dress: Variant = msg.get("dress", {})
+	if client_id.is_empty() or not raw_dress is Dictionary:
+		return
+	var next_dress: Dictionary = raw_dress.duplicate(true)
+	dresses[client_id] = next_dress
+	for index in home_people.size():
+		var home_person: Dictionary = home_people[index]
+		if String(home_person.get("clientId", "")) == client_id:
+			home_person.dress = next_dress.duplicate(true)
+			home_people[index] = home_person
+	for index in _people.size():
+		var school_person: Dictionary = _people[index]
+		if String(school_person.get("clientId", "")) == client_id:
+			school_person.dress = next_dress.duplicate(true)
+			_people[index] = school_person
+	dress_updated.emit()
 
 
 func _app_state() -> Node:
